@@ -6,16 +6,18 @@
 visionOS 应用 [Moon Player](https://moonvrplayer.com/zh/moon-player-apple-vision-pro)。完整产品规划见
 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md`。
 
-当前处于 **Stage 1（项目骨架 + 沉浸播放核心），Task 1-6 已完成并验证**，计划见
+当前处于 **Stage 1（项目骨架 + 沉浸播放核心），Task 1-7 已完成并验证**，计划见
 `docs/superpowers/plans/2026-08-05-stage1-immersive-playback-core.md`。Stage 1 只用硬编码测试视频跑通
 "平面 → 环境化平面（电影院/星空/海景，可实时切换）→ 180°半球 → 360°球体" 这条播放链路，不含真实文件库 UI
 （Stage 2）、不含字幕（Stage 3）。
 
-Task 4/5/6 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合成的彩条测试图案）能在
+Task 4/5/6/7 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合成的彩条测试图案）能在
 `Stage("ImmersiveStage")` 里通过 `VideoPlayerComponent` + `CypressMediaPlayer` 正确渲染播放（模拟器截图确认，
 时间码/帧计数器清晰可见）；银幕下方的 HUD 播放控制条（播放/暂停/退出）正确显示，loading 层在首帧渲染后正确隐藏，
-点退出能正常 `closeStage()` 回到主窗口；360° 测试视频用 `MeshResource.createSphere(10f)` 完整包裹视野、无接缝，
-HUD 独立于视频实体、两种模式下都能看到。全程无崩溃。
+点退出能正常 `closeStage()` 回到主窗口；360°/180° 测试视频都用移植自 StoryPico 项目的 `MeshGenerator`（手写网格 +
+`createWithMeshModel`）渲染，360° 完整包裹视野无接缝（截图确认），180° 前方视野正确显示（截图确认，但转身后半球
+背面是否真的留空——没找到能在模拟器里无头模拟转身的办法，这一点只有代码层面的把握，不是实机验证过的）。HUD 独立于
+视频实体，三种模式下都能看到。全程无崩溃。
 
 ## 为什么这么设计
 
@@ -71,14 +73,23 @@ HUD 独立于视频实体、两种模式下都能看到。全程无崩溃。
   唯一字符串），漏了会崩溃：`IllegalStateException: Only support [SUIStage,SUIWindowContainer], but got a
   [name = PICO_SYSTEM_DEFAULT_WINDOWCONTAINER, ...]`。和 Stage 的 `pico.spatial.stage.id` 是同一类必需字段。
 - **`MeshResource` 有一整套程序化几何体生成 API**（`createPlane`/`createVideoPanel`/`createSphere`/
-  `createCylinder`/`createCone`/`createCapsule`/`createBox`/`createTorus`），球体/半球网格不需要在 PICO Spatial
-  Editor 里手工建模导出——这条信息只在 SDK **6.0** 版本的文档库里查得到（`spatial-sdk_resource-management_mesh.md`），
-  项目实际用的是 spatialBom 0.13.3，但编译验证过这个 API 在 0.13.3 里也存在。查文档时如果只查到旧版本
-  agent-vault（0.13）内容不全，记得同时查一下 6.0 版本的（`/Users/zohar/Library/PICO/sdk/6.0/agent-vault/`），
-  接口签名通常是稳定的。
+  `createCylinder`/`createCone`/`createCapsule`/`createBox`/`createTorus`），**但没有半球/局部扫描角函数**——
+  球体/半球最终没有用这套内置 API，改用了下面这条经验里的手写网格方案。这条"有一整套程序化 API"的信息只在 SDK
+  **6.0** 版本的文档库里查得到（`spatial-sdk_resource-management_mesh.md`），项目实际用的是 spatialBom 0.13.3，
+  编译验证过这些函数在 0.13.3 里也存在。查文档时如果只查到旧版本 agent-vault（0.13）内容不全，记得同时查一下
+  6.0 版本的（`/Users/zohar/Library/PICO/sdk/6.0/agent-vault/`），接口签名通常是稳定的。
+- **半球（180°）网格：参考同工作区 `StoryPico` 项目（`/Users/zohar/WorkSpace/Project/StoryProjects/StoryPico`，
+  同样 spatialBom 0.13.3）的 `VideoPlayableEntity`/`MeshGenerator`。**`MeshResource` 没有半球函数，StoryPico 的
+  解法是手写顶点数据（球坐标参数方程，水平扫描角按 FOV 缩放：360° 传满 `2π`，180° 只传 `π`），通过
+  `MeshResource.createWithMeshModel(MeshModel(positions, triangleIndices, normals, uv0), name)` 导入。已经原样
+  移植到本项目的 `ecs/MeshGenerator.kt`，编译通过，360°/180° 都截图验证过。有类似"SDK 没有现成 API"的困难时，先
+  看看 StoryPico 有没有已经解决过。
 - **实体的子实体可见性跟随父实体的 `enabled`**——如果一个 UI 元素（比如 HUD）需要在多个互斥切换 `enabled` 的实体
-  （比如 `screenEntity`/`sphereEntity`）之间都保持可见，不能把它挂成其中任何一个的子实体，要独立加入内容树、
-  用固定绝对坐标定位。
+  （比如 `screenEntity`/`sphereEntity`/`hemisphereEntity`）之间都保持可见，不能把它挂成其中任何一个的子实体，要
+  独立加入内容树、用固定绝对坐标定位。
+- **PICO 模拟器没有找到无头方式模拟头部 6dof 转身**——控制台的 `rotate` 命令只转 2D 屏幕方向，`physics`/`sensor`
+  子命令不支持直接设置姿态。需要验证"转身之后看到什么"这类效果时，如实说明这一步验证不了，不要假装截图证明了转身
+  后的画面。
 
 ## 关键文件
 
@@ -100,10 +111,13 @@ HUD 独立于视频实体、两种模式下都能看到。全程无崩溃。
 - `playback/Projection.kt`、`playback/StereoMode.kt` — 投影/立体格式枚举，`StereoMode.toVideoDimensionMode()`
   有单元测试（`StereoModeMappingTest`，4/4 通过）。
 - `ecs/PlaybackEntityAssembler.kt` — `assembleScreenEntity`（平面银幕，显式设置 `TransformComponent` 位置，见上面
-  "必须设置位置"那条坑）+ `assembleSphereEntity`（360° 球体，`MeshResource.createSphere` 程序化生成，
-  `MaterialCullingMode.FRONT` 渲染内表面，球体保持在世界原点不额外设置位置——它本来就该包住用户）。
-- `ui/PlaybackViewModel.kt` — Koin scoped 的共享状态：`screenEntity`/`sphereEntity` 互斥 `enabled`，
-  `startTestPlayback`/`startSphereTestPlayback` 两个入口。
+  "必须设置位置"那条坑）+ `assembleSphereEntity`（360°/180° 共用，`horizontalFovDegrees` 参数区分，内部调用
+  `MeshGenerator.generateVideoSphere`，`MaterialCullingMode.NONE`，球体保持在世界原点不额外设置位置——它本来就该
+  包住用户）。
+- `ecs/MeshGenerator.kt` — 从 StoryPico 移植的手写球体/半球网格生成器，见上面"半球网格"那条经验。
+- `ui/PlaybackViewModel.kt` — Koin scoped 的共享状态：`screenEntity`/`sphereEntity`/`hemisphereEntity` 三态互斥
+  `enabled`（`disableAllVideoEntities()` 统一处理，避免加第三个实体后手写两两互斥漏掉），
+  `startTestPlayback`/`startSphereTestPlayback`/`startHemisphereTestPlayback` 三个入口。
 - `di/PlaybackModule.kt` — Koin session scope，让 `DefaultWindowContainer` 和 `Stage` 两棵独立 Compose 树共享同一个
   `PlaybackViewModel`/`CypressMediaPlayer` 实例。
 - `ui/PlaybackHud.kt`、`ui/LoadingErrorAttachment.kt` — HUD 播放控制条（播放/暂停/退出）和 loading/error 覆盖层，
@@ -120,9 +134,9 @@ HUD 独立于视频实体、两种模式下都能看到。全程无崩溃。
 - `VideoPlayerComponent` + `CypressMediaPlayer`、`VideoMaterial`/`VideoDimensionMode`、
   `MeshResource.createVideoPanel`——平面视频播放已跑通并截图验证
 - `AttachmentPanel`（HUD + loading/error）+ `closeStage()` 退出流程——已跑通并截图验证
-- `MeshResource.createSphere` + `MaterialCullingMode.FRONT`——360° 球体播放已跑通并截图验证
-- 还没用到：半球网格（Task 7，`createSphere` 系列里没有现成的半球函数，需要另外确认）、
-  `StageEnvironmentLightingComponent`（Task 8）
+- `MeshResource.createWithMeshModel` + 手写 `MeshModel`（`ecs/MeshGenerator.kt`）——360°/180° 球体/半球播放已跑通
+  并截图验证（180° 转身后背面留空这一点未做实机验证，见上面的坑）
+- 还没用到：`StageEnvironmentLightingComponent`（Task 8）
 
 ## 如何构建/安装/运行
 
@@ -138,6 +152,5 @@ pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
 
 ## 下一步
 
-Task 7：180° 半球播放。`MeshResource` 的程序化几何体列表里没有现成的半球函数，需要先确认怎么做半球——可能是
-`createSphere` 配合遮罩/裁剪，或者别的思路，动手前先查一遍当前 SDK 文档（6.0 和 0.13 两个版本都查，见上面
-"MeshResource 程序化 API" 那条经验）。
+Task 8：三个沉浸式环境（电影院/星空/海景）+ 播放中实时切换。这一步需要天空盒/环境资产（HDRI 或简化 3D 场景）和
+`StageEnvironmentLightingComponent`，两者目前都还没查过确切 API，动手前先查文档。

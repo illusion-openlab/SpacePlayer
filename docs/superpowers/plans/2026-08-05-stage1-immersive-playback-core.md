@@ -1184,6 +1184,8 @@ git add -A
 git commit -m "Add 360 sphere playback path with FRONT-culled VideoMaterial"
 ```
 
+> **修订说明（Task 7 时发现并改掉）：** `MeshResource` 没有半球函数，Task 7 改用了从 StoryPico 项目移植的手写网格方案（`MeshGenerator.generateVideoSphere` + `MeshResource.createWithMeshModel`），360°/180° 现在共用同一套生成逻辑，`assembleSphereEntity` 的 `MaterialCullingMode` 也从 `FRONT` 换成了 `NONE`。本 Task（Task 6）上面的代码块是提交时的版本，最终代码见 Task 7 Step 1/2。
+
 ---
 
 ### Task 7: 180° 半球
@@ -1196,58 +1198,203 @@ git commit -m "Add 360 sphere playback path with FRONT-culled VideoMaterial"
 - Modify: `app/src/main/java/tech/illusion/spaceplayer/ui/PlaceholderMainScreen.kt`
 
 **Interfaces:**
-- Consumes: Task 6 的 `PlaybackEntityAssembler.assembleSphereEntity`（本 Task 直接复用，函数签名不变，只是传入的 `MeshResource` 换成半球网格）
-- Produces: `PlaybackViewModel.hemisphereEntity: Entity` + `fun startHemisphereTestPlayback(assetPath: String, stereoMode: StereoMode, hemisphereMesh: MeshResource)`，与 `sphereEntity`/`screenEntity` 三者互斥 `enabled`。
+- Consumes: 无法复用 Task 6 的 `MeshResource.createSphere`——SDK 完整 API 列表（`createPlane`/`createVideoPanel`/`createSphere`/`createCylinder`/`createCone`/`createCapsule`/`createBox`/`createTorus`/`createWithMeshModel`）里没有半球函数，只有 `createSphere(radius: Float)`，不支持局部扫描角。
+- Produces：见下方"前置说明"——最终方案不是"复用 Task 6 传入不同网格"，而是重写了 `assembleSphereEntity` 本身的签名（加一个 `horizontalFovDegrees` 参数），Task 6 的 360° 路径也跟着换了实现，两者现在共用同一段网格生成代码。
 
-- [ ] **Step 1: 确认半球网格来源**
+> **前置说明：参考同工作区的 StoryPico 项目解法。** 问了用户，得到指引"参考 Pico Story 的 VideoPlayableEntity"——`/Users/zohar/WorkSpace/Project/StoryProjects/StoryPico`（同样是 spatialBom 0.13.3 的 PICO Spatial 项目）里已经有一个跑通的方案：**不用任何 SDK 内置网格函数**，而是手写顶点数据、通过 `MeshResource.createWithMeshModel(model, name)` 导入自定义 `MeshModel`。核心函数 `MeshGenerator.generateVideoSphere(radius, horizontalFov, verticalFov=180f, segment=60)`：垂直方向永远扫满 180°（球的南北极，180°/360° 视频在这个维度上没有区别），只有水平方向按 `horizontalFov/360f` 缩放扫描角——360° 传 `horizontalFov=360f`，180° 传 `horizontalFov=180f`，得到的是真的只覆盖前方 180° 弧度的半球面，不是全球贴一半黑图。法线朝内（`-position/len`），配合 `VideoMaterial` 的 `MaterialCullingMode.NONE`（不做面剔除），这一组合已经在 StoryPico 里验证过能正确渲染。移植后在本项目里编译通过，确认 `MeshModel`/`Vector2`/`ResourceLoadingException`/`MeshResource.createWithMeshModel` 这几个 API 在 spatialBom 0.13.3 里都存在，包名和 StoryPico 完全一致。
+>
+> 这个方案统一了 360°/180° 的网格生成方式，所以**顺带重写了 Task 6 的 `assembleSphereEntity`**（把 `MeshResource.createSphere` + `MaterialCullingMode.FRONT` 换成 `MeshGenerator.generateVideoSphere` + `MaterialCullingMode.NONE`），并对 360° 路径做了回归截图验证（视野依然完整无缝，无崩溃）。
 
-和 Task 6 的前置说明一样：先查 `MeshResource` 是否有半球程序化生成 API；没有就在 Spatial Editor 里再建一个半球图元（或者把 Task 6 的球体网格在 Editor 里裁一半），导出到同一个 `.bundle` 里，加一个新的 mesh 名称。
-
-- [ ] **Step 2: `PlaybackViewModel.kt`——加 `hemisphereEntity`**
+- [x] **Step 1: 新增 `MeshGenerator.kt`（从 StoryPico 移植）**
 
 ```kotlin
+package tech.illusion.spaceplayer.ecs
+
+import android.util.Log
+import com.pico.spatial.core.ecs.resource.MeshModel
+import com.pico.spatial.core.ecs.resource.MeshResource
+import com.pico.spatial.core.ecs.resource.ResourceLoadingException
+import com.pico.spatial.core.math.Vector2
+import com.pico.spatial.core.math.Vector3
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+private const val TAG = "MeshGenerator"
+
+object MeshGenerator {
+
+    fun generateVideoSphere(
+        radius: Float = 10f,
+        horizontalFov: Float,
+        verticalFov: Float = 180f,
+        segment: Int = 60,
+    ): MeshResource? {
+        val ringCount = segment + 1
+        val vertexCount = ringCount * ringCount
+
+        val verticalScale = verticalFov / 180f
+        val verticalOffset = (1f - verticalScale) / 2f
+        val horizontalScale = horizontalFov / 360f
+        // +0.25 makes the sphere "open toward the front" so VR180 faces +Z.
+        val horizontalOffset = (1f - horizontalScale) / 2f + 0.25f
+
+        val positions = ArrayList<Vector3>(vertexCount)
+        val normals = ArrayList<Vector3>(vertexCount)
+        val uvs = ArrayList<Vector2>(vertexCount)
+
+        val pi = PI.toFloat()
+        for (y in 0..segment) {
+            val angle1 = (pi * (y.toFloat() / segment)) * verticalScale + verticalOffset * pi
+            val sin1 = sin(angle1)
+            val cos1 = cos(angle1)
+            for (x in 0..segment) {
+                val angle2 = (pi * 2f * (x.toFloat() / segment)) * horizontalScale +
+                    horizontalOffset * pi * 2f
+                val sin2 = sin(angle2)
+                val cos2 = cos(angle2)
+
+                val px = sin1 * cos2 * radius
+                val py = cos1 * radius
+                val pz = sin1 * sin2 * radius
+                positions.add(Vector3(px, py, pz))
+
+                val len = sqrt(px * px + py * py + pz * pz)
+                if (len > 0f) {
+                    normals.add(Vector3(-px / len, -py / len, -pz / len))
+                } else {
+                    normals.add(Vector3(0f, 0f, 0f))
+                }
+
+                uvs.add(Vector2(x.toFloat() / segment, 1f - y.toFloat() / segment))
+            }
+        }
+
+        val triangles = ArrayList<Int>(segment * segment * 6)
+        for (y in 0 until segment) {
+            for (x in 0 until segment) {
+                val current = x + y * ringCount
+                val next = current + ringCount
+                triangles.add(current + 1)
+                triangles.add(current)
+                triangles.add(next + 1)
+                triangles.add(next + 1)
+                triangles.add(current)
+                triangles.add(next)
+            }
+        }
+
+        return createMeshFromModel(
+            MeshModel(
+                positions = positions,
+                triangleIndices = triangles,
+                normals = normals,
+                uv0 = uvs,
+            ),
+            "videoPlayerSphere",
+        )
+    }
+
+    private fun createMeshFromModel(model: MeshModel, name: String): MeshResource? {
+        return try {
+            MeshResource.createWithMeshModel(model, name = name)
+        } catch (e: ResourceLoadingException) {
+            Log.e(TAG, "$name failed: ${e.message}")
+            null
+        } catch (e: IllegalArgumentException) {
+            Log.e(TAG, "$name invalid: ${e.message}")
+            null
+        }
+    }
+}
+```
+
+- [x] **Step 2: 重写 `PlaybackEntityAssembler.assembleSphereEntity`——加 `horizontalFovDegrees` 参数，360°/180° 共用**
+
+```kotlin
+/**
+ * @param horizontalFovDegrees 360f for full 360° panoramic video, 180f for 180° hemisphere.
+ */
+fun assembleSphereEntity(
+    entity: Entity,
+    player: CypressMediaPlayer,
+    radiusMeters: Float,
+    horizontalFovDegrees: Float,
+    dimensionMode: VideoDimensionMode,
+) {
+    val mesh = MeshGenerator.generateVideoSphere(
+        radius = radiusMeters,
+        horizontalFov = horizontalFovDegrees,
+    )
+    checkNotNull(mesh) { "generateVideoSphere failed, see logcat tag MeshGenerator" }
+    check(mesh.valid) { "generateVideoSphere returned an invalid mesh" }
+    // NONE: MeshGenerator's vertex normals already point inward (toward the sphere centre),
+    // matching StoryPico's proven-working combination - no face culling needed.
+    val material = VideoMaterial(BlendingMode.OPAQUE, dimensionMode, MaterialCullingMode.NONE)
+    entity.components.set(VideoPlayerComponent(player, mesh, material))
+}
+```
+
+（`import com.pico.spatial.core.math.Vector3`/`MeshResource` 这些 import 已经在 Task 6 的版本里存在，这里只是替换函数体，不新增文件级 import。）
+
+- [x] **Step 3: `PlaybackViewModel.kt`——加 `hemisphereEntity`，三态互斥**
+
+```kotlin
+const val FULL_SPHERE_FOV_DEGREES = 360f
+const val HEMISPHERE_FOV_DEGREES = 180f
+
 val hemisphereEntity = Entity()
 private var hemisphereAssembled = false
 
-fun startHemisphereTestPlayback(assetPath: String, stereoMode: StereoMode, hemisphereMesh: MeshResource) {
+private fun disableAllVideoEntities() {
+    screenEntity.enabled = false
+    sphereEntity.enabled = false
+    hemisphereEntity.enabled = false
+}
+
+fun startHemisphereTestPlayback(assetPath: String, stereoMode: StereoMode) {
     if (!hemisphereAssembled) {
         PlaybackEntityAssembler.assembleSphereEntity(
-            hemisphereEntity, manager.player, hemisphereMesh, stereoMode.toVideoDimensionMode(),
+            hemisphereEntity, manager.player, SPHERE_RADIUS_METERS, HEMISPHERE_FOV_DEGREES,
+            stereoMode.toVideoDimensionMode(),
         )
         hemisphereAssembled = true
     }
-    screenEntity.enabled = false
-    sphereEntity.enabled = false
+    disableAllVideoEntities()
     hemisphereEntity.enabled = true
     manager.setup(assetPath)
     isImmersive.value = true
 }
 ```
 
-同时给 `startTestPlayback`/`startSphereTestPlayback` 补上把 `hemisphereEntity.enabled` 设为 `false` 的那一行，保持三者互斥。
+`startTestPlayback`/`startSphereTestPlayback` 都改成先调 `disableAllVideoEntities()` 再把自己那个设 `true`——原来只手写两两互斥的写法在加第三个实体后容易漏，抽成一个函数更安全。`startSphereTestPlayback` 调用 `assembleSphereEntity` 时传 `FULL_SPHERE_FOV_DEGREES`（360f）。
 
-- [ ] **Step 3: `ImmersiveScene.kt` 加 `hemisphereEntity`，`PlaceholderMainScreen.kt` 加"播放测试视频（180°）"按钮**
+- [x] **Step 4: `ImmersiveScene.kt` 加 `hemisphereEntity`，`PlaceholderMainScreen.kt` 加"播放测试视频（180°）"按钮**
 
-写法和 Task 6 的 Step 3/4 完全一样，只是换成 `hemisphereEntity`/`startHemisphereTestPlayback`。
+`content.addEntity(viewModel.hemisphereEntity)`，写法和 `screenEntity`/`sphereEntity` 一样；按钮调用 `viewModel.startHemisphereTestPlayback("videos/sample_180_test.mp4", StereoMode.MONO)`。
 
-- [ ] **Step 4: 构建、安装、启动、截图验证**
+- [x] **Step 5: 构建、安装、启动、截图验证**
 
 ```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew assembleDebug
-pico-cli app install app/build/outputs/apk/debug/app-debug.apk
-adb logcat -c
-pico-cli app launch tech.illusion.spaceplayer
-pico-cli capture screenshot --out ./artifacts/task7-hemisphere-playing.png
-adb logcat -b crash -d
+pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
+adb -s emulator-5554 logcat -c
+pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
+sleep 11
+pico-cli capture screenshot --out ./artifacts/task7-hemisphere-front.png --device emulator-5554
 ```
 
-预期：截图显示视频覆盖前方 180° 视野，转身后方是空的/无纹理（半球背面本来就没有内容，这是正确行为，不是 bug）；无新增崩溃。
+结果：前方视野正确显示测试视频，无崩溃；360° 回归截图（同样的验证流程，换成 `startSphereTestPlayback`）确认换新网格生成方式后视野依然完整无缝。
 
-- [ ] **Step 5: 提交**
+**未能验证的部分，如实记录**：没能验证"转身后半球背面确实是空的"——PICO 模拟器的控制台命令里，`rotate` 只转 2D 屏幕方向（不是头部朝向），`physics`/`sensor` 子命令不支持直接设置 6dof 姿态，没找到无头环境下模拟转身的办法。半球背面留空这一点，目前只有代码层面的把握：`horizontalScale = 180/360 = 0.5` 让 `angle2`（经度）只扫 `π` 弧度而不是 `2π`，数学上确实只生成前方 180° 弧度范围内的顶点，加上这段代码是从 StoryPico 一个正在跑的项目原样移植、逻辑没有改动。但没有实机/头显转身的直接视觉证据，这里不夸大成"已验证"。
+
+- [x] **Step 6: 提交**
 
 ```bash
 git add -A
-git commit -m "Add 180 hemisphere playback path"
+git commit -m "Add 180 hemisphere playback via ported MeshGenerator, unify with 360 sphere"
 ```
 
 ---

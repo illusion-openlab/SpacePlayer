@@ -35,17 +35,30 @@ object PlaybackEntityAssembler {
         }
     }
 
+    /**
+     * @param horizontalFovDegrees 360f for full 360° panoramic video, 180f for 180° hemisphere.
+     * `MeshResource` has no `createHemisphere`, so both cases go through the same hand-built
+     * mesh generator (ported from the sibling StoryPico project's `MeshGenerator`) parameterized
+     * by horizontal sweep - see `MeshGenerator.generateVideoSphere` for how the 180 case reduces
+     * to roughly half the vertices/triangles of the 360 case, not a full sphere with half the
+     * texture blacked out.
+     */
     fun assembleSphereEntity(
         entity: Entity,
         player: CypressMediaPlayer,
         radiusMeters: Float,
+        horizontalFovDegrees: Float,
         dimensionMode: VideoDimensionMode,
     ) {
-        val mesh = MeshResource.createSphere(radiusMeters)
-        check(mesh.valid) { "createSphere returned an invalid mesh" }
-        // FRONT: cull front faces, render back faces - correct for viewing from inside the
-        // sphere (confirmed by the official "Play spatial video in an app" sample).
-        val material = VideoMaterial(BlendingMode.OPAQUE, dimensionMode, MaterialCullingMode.FRONT)
+        val mesh = MeshGenerator.generateVideoSphere(
+            radius = radiusMeters,
+            horizontalFov = horizontalFovDegrees,
+        )
+        checkNotNull(mesh) { "generateVideoSphere failed, see logcat tag MeshGenerator" }
+        check(mesh.valid) { "generateVideoSphere returned an invalid mesh" }
+        // NONE: MeshGenerator's vertex normals already point inward (toward the sphere centre),
+        // matching StoryPico's proven-working combination - no face culling needed.
+        val material = VideoMaterial(BlendingMode.OPAQUE, dimensionMode, MaterialCullingMode.NONE)
         entity.components.set(VideoPlayerComponent(player, mesh, material))
         // Sphere is centered on the user by design (radiusMeters chosen so the surface surrounds
         // the default spawn point) - world origin is correct here, unlike the flat screen panel.
