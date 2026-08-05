@@ -160,7 +160,7 @@ git commit -m "Bootstrap SpacePlayer via pico-cli scaffold"
   ```
   后续 Task（4/5/6/7）都通过 `PlaybackManager.player` 拿到 `CypressMediaPlayer` 实例喂给 `VideoPlayerComponent`。
 
-- [ ] **Step 1: 写 `PlaybackState.kt`**
+- [x] **Step 1: 写 `PlaybackState.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.playback
@@ -168,7 +168,7 @@ package tech.illusion.spaceplayer.playback
 enum class PlaybackState { INIT, PREPARING, READY, PLAYING, PAUSED, ERROR }
 ```
 
-- [ ] **Step 2: 写 `PlaybackManager.kt`**
+- [x] **Step 2: 写 `PlaybackManager.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.playback
@@ -252,21 +252,34 @@ class PlaybackManager(private val context: Context) {
 }
 ```
 
-> 备注：构造函数/包路径（`com.pico.spatial.core.video.*`）以 Task 1 生成项目里实际能 import 到的为准——如果 Android Studio/编译报"找不到符号"，用 IDE 的"跳转到定义"或 `spatial-sdk-guideline` 技能查当前 SDK 版本里 `CypressMediaPlayer` 真实所在包名，修正 import，不要为了让它先编译过而删掉功能。
+> 已确认（`./gradlew assembleDebug` 编译通过）：`CypressMediaPlayer`/`CypressMediaPlayerCallback`/`CypressMediaPlayerErrorCode` 的真实包名是 `com.pico.spatial.core.ecs.video`，不是计划撰写时猜测的 `com.pico.spatial.core.video`。上面代码块已经是编译通过的版本。
 
-- [ ] **Step 3: 放测试视频资源**
+- [x] **Step 3: 放测试视频资源**
 
-在 `app/src/main/assets/videos/` 下放一个 5-10 秒、单目平面、H.264 编码的小体积 mp4（任何来源都行，例如自己用手机录一段再转码，或用系统自带的任意可分发短视频），命名为 `sample_flat_test.mp4`。确认 `app/build.gradle.kts` 的 `androidResources`/资源打包配置没有把 `assets/videos/*.mp4` 排除或强制压缩（视频文件不应被 zip 二次压缩，需要的话在 `aaptOptions`/`androidResources.noCompress` 里加 `"mp4"`）。
-
-- [ ] **Step 4: 构建验证**
+用 `ffmpeg`（本机已装，`/opt/homebrew/bin/ffmpeg`）合成了一段 8 秒、960x540、H.264 baseline + AAC 的测试图案视频（`testsrc2` 图案 + 440Hz 正弦测试音，没有用 `drawtext` 滤镜——这台机器的 ffmpeg build 没编译 `libfreetype`）：
 
 ```bash
+ffmpeg -y \
+  -f lavfi -i "testsrc2=size=960x540:rate=30:duration=8" \
+  -f lavfi -i "sine=frequency=440:duration=8" \
+  -c:v libx264 -pix_fmt yuv420p -profile:v baseline -level 3.1 \
+  -c:a aac -b:a 96k \
+  -movflags +faststart \
+  app/src/main/assets/videos/sample_flat_test.mp4
+```
+
+未额外配置 `noCompress`——Android 默认的 aapt 打包对常见媒体扩展名（含 `.mp4`）本来就不做二次压缩，Task 4 实际播放验证时如果出现异常再回来加。
+
+- [x] **Step 4: 构建验证**
+
+```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew assembleDebug
 ```
 
-预期：编译通过（此时 `PlaybackManager` 还没被任何 UI 调用，只需要保证类型检查通过）。
+结果：编译通过，`com.pico.spatial.core.ecs.video.{CypressMediaPlayer, CypressMediaPlayerCallback, CypressMediaPlayerErrorCode}` 包名确认无误。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/playback app/src/main/assets/videos
