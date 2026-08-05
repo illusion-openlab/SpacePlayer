@@ -1,11 +1,15 @@
 package tech.illusion.spaceplayer.ecs
 
 import com.pico.spatial.core.ecs.Entity
+import com.pico.spatial.core.ecs.LoadType
+import com.pico.spatial.core.ecs.ModelComponent
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.ecs.VideoPlayerComponent
 import com.pico.spatial.core.ecs.resource.BlendingMode
 import com.pico.spatial.core.ecs.resource.MaterialCullingMode
 import com.pico.spatial.core.ecs.resource.MeshResource
+import com.pico.spatial.core.ecs.resource.TextureResource
+import com.pico.spatial.core.ecs.resource.UnlitMaterial
 import com.pico.spatial.core.ecs.resource.VideoMaterial
 import com.pico.spatial.core.ecs.video.CypressMediaPlayer
 import com.pico.spatial.core.ecs.video.VideoDimensionMode
@@ -62,5 +66,28 @@ object PlaybackEntityAssembler {
         entity.components.set(VideoPlayerComponent(player, mesh, material))
         // Sphere is centered on the user by design (radiusMeters chosen so the surface surrounds
         // the default spawn point) - world origin is correct here, unlike the flat screen panel.
+    }
+
+    /**
+     * Environment skybox: same "big inward-facing sphere" mesh as a video sphere, but textured
+     * as a static image via `UnlitMaterial` instead of `VideoMaterial` + `CypressMediaPlayer` -
+     * ported from the sibling StoryPico project's `SkyboxPlayableEntity` (`MaterialCullingMode.BACK`
+     * there, not `NONE` - StoryPico's proven combination for `UnlitMaterial` skyboxes specifically,
+     * kept as-is rather than reusing the video sphere's culling mode).
+     */
+    fun assembleEnvironmentEntity(
+        entity: Entity,
+        textureAssetPath: String,
+        radiusMeters: Float,
+    ) {
+        val mesh = MeshGenerator.generateVideoSphere(radius = radiusMeters, horizontalFov = 360f)
+        checkNotNull(mesh) { "generateVideoSphere failed, see logcat tag MeshGenerator" }
+        check(mesh.valid) { "generateVideoSphere returned an invalid mesh" }
+        val texture = TextureResource.load(textureAssetPath, LoadType.FROM_ASSETS)
+        val material = UnlitMaterial.create().apply {
+            setBaseColorTexture(texture)
+            setCullingMode(MaterialCullingMode.BACK)
+        }
+        entity.components.set(ModelComponent(mesh, material))
     }
 }

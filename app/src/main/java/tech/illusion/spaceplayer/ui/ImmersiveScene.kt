@@ -30,7 +30,10 @@ fun ImmersiveScene() {
                 AttachmentPanel(id = HUD_ATTACHMENT_ID) {
                     PlaybackHud(
                         state = viewModel.manager.state,
+                        isFlatProjection = viewModel.isFlatProjection.value,
+                        currentEnvironment = viewModel.currentEnvironment.value,
                         onPlayPause = { viewModel.togglePlayPause() },
+                        onSelectEnvironment = { viewModel.switchEnvironment(it) },
                         onExit = {
                             viewModel.exitImmersive()
                             coroutineScope.launch { navigator.closeStage() }
@@ -42,6 +45,9 @@ fun ImmersiveScene() {
                 content.addEntity(viewModel.screenEntity)
                 content.addEntity(viewModel.sphereEntity)
                 content.addEntity(viewModel.hemisphereEntity)
+                content.addEntity(viewModel.cinemaEnvironmentEntity)
+                content.addEntity(viewModel.starrySkyEnvironmentEntity)
+                content.addEntity(viewModel.seasideEnvironmentEntity)
 
                 // Independent of screenEntity/sphereEntity/hemisphereEntity on purpose: only one
                 // of the three is `enabled` at a time (children of a disabled entity are hidden

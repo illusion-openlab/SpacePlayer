@@ -1,6 +1,7 @@
 package tech.illusion.spaceplayer.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
 import tech.illusion.spaceplayer.IMMERSIVE_STAGE_ID
 import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
+import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.StereoMode
 
 @Composable
@@ -34,6 +36,22 @@ fun PlaceholderMainScreen() {
                 color = PicoTheme.colorScheme.labelPrimary,
                 style = PicoTheme.typography.titleLarge.copy(fontSize = 40.sp),
             )
+            Text(
+                text = "平面视频的沉浸环境（播放前预选，播放中也能在 HUD 里实时切换）",
+                color = PicoTheme.colorScheme.labelPrimary,
+                style = PicoTheme.typography.titleLarge.copy(fontSize = 20.sp),
+            )
+            Row {
+                Environment.entries.forEach { env ->
+                    Button(onClick = { viewModel.switchEnvironment(env) }) {
+                        Text(
+                            text = if (env == viewModel.currentEnvironment.value) "[${env.label}]" else env.label,
+                            color = PicoTheme.colorScheme.labelPrimary,
+                            style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
+                        )
+                    }
+                }
+            }
             Button(onClick = {
                 viewModel.startTestPlayback("videos/sample_flat_test.mp4", StereoMode.MONO)
                 coroutineScope.launch {

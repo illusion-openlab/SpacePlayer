@@ -3,7 +3,10 @@ package tech.illusion.spaceplayer.ui
 import android.content.Context
 import androidx.compose.runtime.mutableStateOf
 import com.pico.spatial.core.ecs.Entity
+import com.pico.spatial.core.ecs.TransformComponent
+import com.pico.spatial.core.math.Vector3
 import tech.illusion.spaceplayer.ecs.PlaybackEntityAssembler
+import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.PlaybackManager
 import tech.illusion.spaceplayer.playback.PlaybackState
 import tech.illusion.spaceplayer.playback.StereoMode
@@ -13,19 +16,38 @@ const val SCREEN_HEIGHT_METERS = 0.9f
 const val SPHERE_RADIUS_METERS = 10f
 const val FULL_SPHERE_FOV_DEGREES = 360f
 const val HEMISPHERE_FOV_DEGREES = 180f
+const val ENVIRONMENT_SKYBOX_RADIUS_METERS = 20f
+
+// "Docked" onto a cinema wall: farther away than the default floating position, simulating a
+// screen embedded across the room rather than a panel hovering in front of the user.
+private val CINEMA_SCREEN_POSITION = Vector3(0f, 1.6f, -4f)
+private val FLOATING_SCREEN_POSITION = Vector3(0f, 1.5f, -2f)
 
 class PlaybackViewModel(context: Context) {
     val manager = PlaybackManager(context)
     val screenEntity = Entity()
     val sphereEntity = Entity()
     val hemisphereEntity = Entity()
+    val cinemaEnvironmentEntity = Entity()
+    val starrySkyEnvironmentEntity = Entity()
+    val seasideEnvironmentEntity = Entity()
 
     var isImmersive = mutableStateOf(false)
+        private set
+
+    var currentEnvironment = mutableStateOf(Environment.CINEMA)
+        private set
+
+    // Compose-observable mirror of `screenEntity.enabled` - the HUD reads this to decide whether
+    // to show the environment switcher (only meaningful for flat video), and a plain field read
+    // of an SDK Entity's `enabled` property wouldn't trigger recomposition on its own.
+    var isFlatProjection = mutableStateOf(true)
         private set
 
     private var screenAssembled = false
     private var sphereAssembled = false
     private var hemisphereAssembled = false
+    private var environmentsAssembled = false
 
     private fun disableAllVideoEntities() {
         screenEntity.enabled = false
@@ -33,7 +55,47 @@ class PlaybackViewModel(context: Context) {
         hemisphereEntity.enabled = false
     }
 
+    private fun assembleEnvironmentsIfNeeded() {
+        if (environmentsAssembled) return
+        PlaybackEntityAssembler.assembleEnvironmentEntity(
+            cinemaEnvironmentEntity, Environment.CINEMA.assetPath, ENVIRONMENT_SKYBOX_RADIUS_METERS,
+        )
+        PlaybackEntityAssembler.assembleEnvironmentEntity(
+            starrySkyEnvironmentEntity, Environment.STARRY_SKY.assetPath, ENVIRONMENT_SKYBOX_RADIUS_METERS,
+        )
+        PlaybackEntityAssembler.assembleEnvironmentEntity(
+            seasideEnvironmentEntity, Environment.SEASIDE.assetPath, ENVIRONMENT_SKYBOX_RADIUS_METERS,
+        )
+        environmentsAssembled = true
+    }
+
+    // Only meaningful for the flat screen - 180°/360° video doesn't go through EnvironmentLayer,
+    // it *is* the environment (see design spec section 3).
+    private fun updateEnvironmentVisibility() {
+        val showEnvironment = screenEntity.enabled
+        cinemaEnvironmentEntity.enabled = showEnvironment && currentEnvironment.value == Environment.CINEMA
+        starrySkyEnvironmentEntity.enabled = showEnvironment && currentEnvironment.value == Environment.STARRY_SKY
+        seasideEnvironmentEntity.enabled = showEnvironment && currentEnvironment.value == Environment.SEASIDE
+    }
+
+    private fun repositionScreenForCurrentEnvironment() {
+        val target = if (currentEnvironment.value == Environment.CINEMA) {
+            CINEMA_SCREEN_POSITION
+        } else {
+            FLOATING_SCREEN_POSITION
+        }
+        screenEntity.components[TransformComponent::class.java]?.setPosition(target)
+    }
+
+    /** Switchable while playing - does not touch `manager`/`CypressMediaPlayer` at all. */
+    fun switchEnvironment(target: Environment) {
+        currentEnvironment.value = target
+        repositionScreenForCurrentEnvironment()
+        updateEnvironmentVisibility()
+    }
+
     fun startTestPlayback(assetPath: String, stereoMode: StereoMode) {
+        assembleEnvironmentsIfNeeded()
         if (!screenAssembled) {
             PlaybackEntityAssembler.assembleScreenEntity(
                 screenEntity,
@@ -46,6 +108,9 @@ class PlaybackViewModel(context: Context) {
         }
         disableAllVideoEntities()
         screenEntity.enabled = true
+        isFlatProjection.value = true
+        repositionScreenForCurrentEnvironment()
+        updateEnvironmentVisibility()
         manager.setup(assetPath)
         isImmersive.value = true
     }
@@ -63,6 +128,8 @@ class PlaybackViewModel(context: Context) {
         }
         disableAllVideoEntities()
         sphereEntity.enabled = true
+        isFlatProjection.value = false
+        updateEnvironmentVisibility() // screenEntity is now disabled, so this turns all 3 off
         manager.setup(assetPath)
         isImmersive.value = true
     }
@@ -80,6 +147,8 @@ class PlaybackViewModel(context: Context) {
         }
         disableAllVideoEntities()
         hemisphereEntity.enabled = true
+        isFlatProjection.value = false
+        updateEnvironmentVisibility() // screenEntity is now disabled, so this turns all 3 off
         manager.setup(assetPath)
         isImmersive.value = true
     }

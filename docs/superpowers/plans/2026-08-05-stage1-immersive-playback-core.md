@@ -1413,105 +1413,199 @@ git commit -m "Add 180 hemisphere playback via ported MeshGenerator, unify with 
 - Consumes: Task 4 的 `PlaybackViewModel.screenEntity`/`startTestPlayback`
 - Produces:
   ```kotlin
-  enum class Environment { CINEMA, STARRY_SKY, SEASIDE }
+  enum class Environment(val assetPath: String, val label: String) {
+      CINEMA("skyboxes/cinema_skybox.jpg", "电影院"),
+      STARRY_SKY("skyboxes/starry_skybox.jpg", "星空"),
+      SEASIDE("skyboxes/seaside_skybox.jpg", "海景"),
+  }
   ```
-  `PlaybackViewModel` 新增 `var currentEnvironment: Environment`、`fun switchEnvironment(target: Environment)`——这是本 Stage 1 的最后一块拼图，Stage 2 的环境预选 UI 直接调用 `switchEnvironment`，不需要再改这里的签名。
+  `PlaybackViewModel` 新增 `currentEnvironment: State<Environment>`、`fun switchEnvironment(target: Environment)`——这是本 Stage 1 的最后一块拼图，Stage 2 的环境预选 UI 直接调用 `switchEnvironment`，不需要再改这里的签名。
 
-> **前置说明（和 Task 6 一样，先查文档再写代码）：** 三个环境天空盒 + 环境光照，需要：(1) 电影院一个简化的 3D 影厅网格（暗色墙面/地面 + 银幕嵌在墙上的锚点）+ 星空/海景各一张 equirectangular HDRI 贴到球体内表面；这些都在 Spatial Editor 里做，导出到 `app/src/main/assets/bundles/environments.bundle`。(2) 让天空盒驱动 Stage 环境光照要用到的 `StageEnvironmentLightingComponent`——写这份计划时文档库访问不到它的精确构造参数，**实现这一步之前必须先用 `spatial-sdk-guideline` 技能查 `spatial-sdk_rendering_image-based-lighting.md` 和 `lighting-components.md` 确认当前真实的构造签名**，不要照抄下面示意性的伪代码。
+> **前置说明：实际做法比计划撰写时设想的简单很多，两处"待查"都已解决。**
+>
+> 1. **天空盒不需要 Spatial Editor / `.bundle`。** 问了用户如何处理 Task 7 类似的"SDK 没有现成 API"问题，得到的指引同样是参考 StoryPico。StoryPico 的 `SkyboxPlayableEntity` 显示：天空盒就是一个大号的、朝内表面渲染的球体 `Entity` + `ModelComponent(mesh, UnlitMaterial)`，贴一张等距柱状（equirectangular）图片——和视频球体是同一种几何体，只是用静态图片材质（`UnlitMaterial`）而不是视频材质（`VideoMaterial`）。本项目复用 Task 6/7 已经写好的 `MeshGenerator.generateVideoSphere(horizontalFov = 360f)` 生成网格，用 `TextureResource.load(path, LoadType.FROM_ASSETS)` 加载贴图，`UnlitMaterial.create().apply { setBaseColorTexture(texture); setCullingMode(MaterialCullingMode.BACK) }`（注意是 `BACK`，不是视频球体用的 `NONE`——照抄 StoryPico 这个具体组合，两种材质类型的最佳剔除模式不一样）。三张贴图（电影院/星空/海景）是本机用 `ffmpeg` 的 `gradients` 滤镜生成的 2048×1024 渐变色 JPG 占位图，不是真实 HDRI 照片——设计稿第 5 节本来就把"电影院环境的高保真美术"列为非目标，V1 用简化占位符合预期。
+> 2. **`StageEnvironmentLightingComponent` 需要 `.ktx` HDR cubemap，本机没有编码工具（`toktx` 等），这部分跳过，不是"以查到的为准"那种占位符，是明确的范围裁剪。** 查到的真实构造签名是 `StageEnvironmentLightingComponent(source: ImageBasedLightSource, intensityExponent: Float)`（`source` 通常是 `ImageBasedLightSource.Single(cubemapTexture)`，`.ktx` 格式），但生成一个像样的 `.ktx` HDR cubemap 需要专门的编码工具链，这台机器上没有装。设计稿本来就说"电影院环境的高保真美术：V1 用简化几何体+基础材质占位"——真实环境光照（IBL）明显属于"高保真美术"范畴，所以 V1 **不接入 `StageEnvironmentLightingComponent`**，只做天空盒贴图切换。真的要做 IBL，得等有合适的 `.ktx` 资产（可能是 Stage 2 或更后面的事）。
 
-- [ ] **Step 1: `Environment.kt`**
+- [x] **Step 1: `Environment.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.playback
 
-enum class Environment { CINEMA, STARRY_SKY, SEASIDE }
-```
-
-- [ ] **Step 2: `PlaybackEntityAssembler.kt`——加环境层组装函数**
-
-```kotlin
-fun assembleEnvironmentEntity(
-    entity: Entity,
-    skyboxMesh: MeshResource,
-    skyboxMaterial: VideoMaterial, // 或者 ShaderGraphMaterial/普通 Material，取决于 HDRI 贴图怎么接（见下）
-) {
-    check(skyboxMesh.valid) { "environment skybox mesh is invalid" }
-    entity.components.set(/* 具体挂载哪个渲染组件，以 Step 前置说明查到的 API 为准 */)
-    // 在这个实体上附加 StageEnvironmentLightingComponent，参数以查到的真实签名为准
+enum class Environment(val assetPath: String, val label: String) {
+    CINEMA("skyboxes/cinema_skybox.jpg", "电影院"),
+    STARRY_SKY("skyboxes/starry_skybox.jpg", "星空"),
+    SEASIDE("skyboxes/seaside_skybox.jpg", "海景"),
 }
 ```
 
-> 这个函数体故意留了两处"以查到的为准"——这不是走过场的占位符，而是本计划明确交代过的、必须先查文档再落笔的两个具体未知点（环境贴图怎么接渲染管线、`StageEnvironmentLightingComponent` 的构造参数）。实现者查完文档后，把这两处替换成真实、可编译的代码，其余部分（`assembleEnvironmentEntity` 的签名、调用方式）不变。
+- [x] **Step 2: 生成占位天空盒贴图**
 
-- [ ] **Step 3: `PlaybackViewModel.kt`——三个环境实体 + 切换逻辑**
+```bash
+mkdir -p app/src/main/assets/skyboxes
+ffmpeg -y -f lavfi -i "gradients=size=2048x1024:c0=0x0a0608:c1=0x1a0e10:c2=0x050304:x0=1024:y0=0:x1=1024:y1=1024" \
+  -frames:v 1 app/src/main/assets/skyboxes/cinema_skybox.jpg
+ffmpeg -y -f lavfi -i "gradients=size=2048x1024:c0=0x0b1030:c1=0x171d47:c2=0x03060f:x0=1024:y0=0:x1=1024:y1=1024" \
+  -frames:v 1 app/src/main/assets/skyboxes/starry_skybox.jpg
+ffmpeg -y -f lavfi -i "gradients=size=2048x1024:c0=0x0e4a4a:c1=0x0a3a44:c2=0x062023:x0=1024:y0=0:x1=1024:y1=1024" \
+  -frames:v 1 app/src/main/assets/skyboxes/seaside_skybox.jpg
+```
+
+- [x] **Step 3: `PlaybackEntityAssembler.kt`——加环境层组装函数**
 
 ```kotlin
+/**
+ * Environment skybox: same "big inward-facing sphere" mesh as a video sphere, but textured
+ * as a static image via `UnlitMaterial` instead of `VideoMaterial` + `CypressMediaPlayer` -
+ * ported from the sibling StoryPico project's `SkyboxPlayableEntity` (`MaterialCullingMode.BACK`
+ * there, not `NONE` - StoryPico's proven combination for `UnlitMaterial` skyboxes specifically,
+ * kept as-is rather than reusing the video sphere's culling mode).
+ */
+fun assembleEnvironmentEntity(
+    entity: Entity,
+    textureAssetPath: String,
+    radiusMeters: Float,
+) {
+    val mesh = MeshGenerator.generateVideoSphere(radius = radiusMeters, horizontalFov = 360f)
+    checkNotNull(mesh) { "generateVideoSphere failed, see logcat tag MeshGenerator" }
+    check(mesh.valid) { "generateVideoSphere returned an invalid mesh" }
+    val texture = TextureResource.load(textureAssetPath, LoadType.FROM_ASSETS)
+    val material = UnlitMaterial.create().apply {
+        setBaseColorTexture(texture)
+        setCullingMode(MaterialCullingMode.BACK)
+    }
+    entity.components.set(ModelComponent(mesh, material))
+}
+```
+
+（新增 import：`com.pico.spatial.core.ecs.LoadType`、`com.pico.spatial.core.ecs.ModelComponent`、`com.pico.spatial.core.ecs.resource.TextureResource`、`com.pico.spatial.core.ecs.resource.UnlitMaterial`——全部编译通过验证。）
+
+- [x] **Step 4: `PlaybackViewModel.kt`——三个环境实体 + 切换逻辑 + 电影院银幕重新定位**
+
+```kotlin
+const val ENVIRONMENT_SKYBOX_RADIUS_METERS = 20f
+
+// "Docked" onto a cinema wall: farther away than the default floating position.
+private val CINEMA_SCREEN_POSITION = Vector3(0f, 1.6f, -4f)
+private val FLOATING_SCREEN_POSITION = Vector3(0f, 1.5f, -2f)
+
 val cinemaEnvironmentEntity = Entity()
 val starrySkyEnvironmentEntity = Entity()
 val seasideEnvironmentEntity = Entity()
 
-var currentEnvironment by mutableStateOf(Environment.CINEMA)
+var currentEnvironment = mutableStateOf(Environment.CINEMA)
     private set
 
+// Compose-observable mirror of `screenEntity.enabled` - a plain field read of an SDK Entity's
+// `enabled` property wouldn't trigger recomposition on its own.
+var isFlatProjection = mutableStateOf(true)
+    private set
+
+private var environmentsAssembled = false
+
+private fun assembleEnvironmentsIfNeeded() {
+    if (environmentsAssembled) return
+    PlaybackEntityAssembler.assembleEnvironmentEntity(
+        cinemaEnvironmentEntity, Environment.CINEMA.assetPath, ENVIRONMENT_SKYBOX_RADIUS_METERS,
+    )
+    PlaybackEntityAssembler.assembleEnvironmentEntity(
+        starrySkyEnvironmentEntity, Environment.STARRY_SKY.assetPath, ENVIRONMENT_SKYBOX_RADIUS_METERS,
+    )
+    PlaybackEntityAssembler.assembleEnvironmentEntity(
+        seasideEnvironmentEntity, Environment.SEASIDE.assetPath, ENVIRONMENT_SKYBOX_RADIUS_METERS,
+    )
+    environmentsAssembled = true
+}
+
+// Only meaningful for the flat screen - 180°/360° video doesn't go through EnvironmentLayer,
+// it *is* the environment (design spec section 3).
+private fun updateEnvironmentVisibility() {
+    val showEnvironment = screenEntity.enabled
+    cinemaEnvironmentEntity.enabled = showEnvironment && currentEnvironment.value == Environment.CINEMA
+    starrySkyEnvironmentEntity.enabled = showEnvironment && currentEnvironment.value == Environment.STARRY_SKY
+    seasideEnvironmentEntity.enabled = showEnvironment && currentEnvironment.value == Environment.SEASIDE
+}
+
+private fun repositionScreenForCurrentEnvironment() {
+    val target = if (currentEnvironment.value == Environment.CINEMA) CINEMA_SCREEN_POSITION else FLOATING_SCREEN_POSITION
+    screenEntity.components[TransformComponent::class.java]?.setPosition(target)
+}
+
+/** Switchable while playing - does not touch `manager`/`CypressMediaPlayer` at all. */
 fun switchEnvironment(target: Environment) {
-    cinemaEnvironmentEntity.enabled = target == Environment.CINEMA
-    starrySkyEnvironmentEntity.enabled = target == Environment.STARRY_SKY
-    seasideEnvironmentEntity.enabled = target == Environment.SEASIDE
-    currentEnvironment = target
-    // 电影院模式下把 screenEntity 重新挂到墙面锚点；其余两个环境挂到悬浮锚点
-    // 具体锚点/父子关系写法参照 Editor 里为 cinemaEnvironmentEntity 建的锚点子实体
+    currentEnvironment.value = target
+    repositionScreenForCurrentEnvironment()
+    updateEnvironmentVisibility()
 }
 ```
 
-关键约束（对应设计稿第 3 节）：`switchEnvironment` 全程不调用 `manager` 的任何方法，只操作这三个环境实体的 `enabled` 和 `screenEntity` 的父子挂载,播放不受影响。
+`startTestPlayback` 开头加 `assembleEnvironmentsIfNeeded()`，结尾加 `isFlatProjection.value = true` + `repositionScreenForCurrentEnvironment()` + `updateEnvironmentVisibility()`；`startSphereTestPlayback`/`startHemisphereTestPlayback` 结尾加 `isFlatProjection.value = false` + `updateEnvironmentVisibility()`（此时 `screenEntity.enabled` 已经是 `false`，这一行会把三个环境实体全部关掉）。
 
-- [ ] **Step 4: `ImmersiveScene.kt`——把三个环境实体加进内容树，初始状态只有 `CINEMA` 可见**
+关键约束（对应设计稿第 3 节）：`switchEnvironment` 全程不调用 `manager` 的任何方法，只操作环境实体的 `enabled` 和 `screenEntity` 的位置，播放不受影响——已通过截图验证（见 Step 7）。
 
-- [ ] **Step 5: `PlaybackHud.kt`——加环境切换按钮组**
+- [x] **Step 5: `ImmersiveScene.kt`——把三个环境实体加进内容树**
+
+`content.addEntity(...)` 三个环境实体，和 `screenEntity`/`sphereEntity`/`hemisphereEntity` 一样直接加进 `SpatialView` 的 `initial` 块；`PlaybackHud` 的入参加上 `isFlatProjection = viewModel.isFlatProjection.value`、`currentEnvironment = viewModel.currentEnvironment.value`、`onSelectEnvironment = { viewModel.switchEnvironment(it) }`。
+
+- [x] **Step 6: `PlaybackHud.kt`——加环境切换按钮组**
 
 ```kotlin
-@Composable
-fun EnvironmentSwitcher(
-    current: Environment,
-    onSelect: (Environment) -> Unit,
-) {
-    PicoTheme {
-        Row {
-            listOf(Environment.CINEMA to "电影院", Environment.STARRY_SKY to "星空", Environment.SEASIDE to "海景")
-                .forEach { (env, label) ->
-                    Button(onClick = { onSelect(env) }) {
-                        Text(if (env == current) "[$label]" else label)
-                    }
-                }
+if (isFlatProjection) {
+    Environment.entries.forEach { env ->
+        Button(onClick = { onSelectEnvironment(env) }) {
+            Text(
+                text = if (env == currentEnvironment) "[${env.label}]" else env.label,
+                color = PicoTheme.colorScheme.labelPrimary,
+                style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
+            )
+        }
+    }
+} else {
+    Text(
+        text = "全景视频 · 自动沉浸",
+        color = PicoTheme.colorScheme.labelPrimary,
+        style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
+    )
+}
+```
+
+- [x] **Step 7: `PlaceholderMainScreen.kt`——平面测试按钮旁加环境预选**
+
+播放前的环境预选直接复用 `viewModel.switchEnvironment(env)`（这个函数本来就不碰播放器，播放前调用完全安全），不需要额外定义一个"预选态"再在开始播放时才应用：
+
+```kotlin
+Row {
+    Environment.entries.forEach { env ->
+        Button(onClick = { viewModel.switchEnvironment(env) }) {
+            Text(
+                text = if (env == viewModel.currentEnvironment.value) "[${env.label}]" else env.label,
+                color = PicoTheme.colorScheme.labelPrimary,
+                style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
+            )
         }
     }
 }
 ```
 
-只在 `viewModel`当前播放的是平面视频（`screenEntity.enabled == true`）时显示这个按钮组；球体/半球播放时隐藏。
+- [x] **Step 8: 构建、安装、启动、截图验证——重点验证"播放中切换环境不中断"**
 
-- [ ] **Step 6: `PlaceholderMainScreen.kt`——平面测试按钮旁加环境预选**
-
-播放前允许选一个初始环境，调用 `viewModel.switchEnvironment(selected)` 后再 `startTestPlayback`。
-
-- [ ] **Step 7: 构建、安装、启动、截图验证——重点验证"播放中切换环境不中断"**
+用临时 `LaunchedEffect`（`PlaceholderMainScreen` 里自动触发平面播放，`ImmersiveScene` 里用 `delay()` 依次自动触发 `switchEnvironment(STARRY_SKY)`/`switchEnvironment(SEASIDE)`）验证，验证完已删除：
 
 ```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew assembleDebug
-pico-cli app install app/build/outputs/apk/debug/app-debug.apk
-adb logcat -c
-pico-cli app launch tech.illusion.spaceplayer
-pico-cli capture screenshot --out ./artifacts/task8-cinema.png
-# 点击"星空"环境切换按钮
-pico-cli capture screenshot --out ./artifacts/task8-starry.png
-# 点击"海景"环境切换按钮
-pico-cli capture screenshot --out ./artifacts/task8-seaside.png
-adb logcat -b crash -d
+pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
+adb -s emulator-5554 logcat -c
+pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
+# 分别在电影院/海景阶段截图
+pico-cli capture screenshot --out ./artifacts/task8-cinema.png --device emulator-5554
+pico-cli capture screenshot --out ./artifacts/task8-seaside.png --device emulator-5554
 ```
 
-预期：三张截图分别显示三种环境背景，同一块银幕、同一段测试视频持续播放（用 HUD 上的进度/时长文本或截图里视频画面内容的连续性判断没有从头重播）；无新增崩溃。
+结果：电影院阶段背景纯黑（`screenEntity` 挪到了 -4 米的"墙面"位置，和主窗口在同一条视线上被更近的主窗口面板挡住——这不是 bug，只是这个测试摄像机角度恰好挡住了）；海景阶段背景变成海景渐变色，测试视频（`testsrc2` 彩条 + 时间码）持续播放、没有从头重播，HUD 和主窗口的环境选择器状态同步一致（都显示 `[海景]` 高亮）；`adb logcat -b crash -d` 全程无崩溃。
 
-- [ ] **Step 8: 提交**
+**未能验证的部分，如实记录**：没能单独截图确认"星空"环境的画面——会话轮次之间的实际耗时不完全可控，多次尝试卡时间窗口截图都跳过了星空阶段（要么还没切换、要么已经切到海景）。星空用的是和电影院/海景完全相同的 `assembleEnvironmentEntity` 代码路径，只是贴图路径参数不同，所以风险很低，但严格说这一项没有独立的视觉证据，不夸大成"三个环境都截图确认过"。
+
+- [x] **Step 9: 提交**
 
 ```bash
 git add -A

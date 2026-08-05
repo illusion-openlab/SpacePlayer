@@ -6,18 +6,19 @@
 visionOS 应用 [Moon Player](https://moonvrplayer.com/zh/moon-player-apple-vision-pro)。完整产品规划见
 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md`。
 
-当前处于 **Stage 1（项目骨架 + 沉浸播放核心），Task 1-7 已完成并验证**，计划见
+当前处于 **Stage 1（项目骨架 + 沉浸播放核心），Task 1-8 已完成并验证**，计划见
 `docs/superpowers/plans/2026-08-05-stage1-immersive-playback-core.md`。Stage 1 只用硬编码测试视频跑通
 "平面 → 环境化平面（电影院/星空/海景，可实时切换）→ 180°半球 → 360°球体" 这条播放链路，不含真实文件库 UI
-（Stage 2）、不含字幕（Stage 3）。
+（Stage 2）、不含字幕（Stage 3）。只剩 Task 9（端到端回归）。
 
-Task 4/5/6/7 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合成的彩条测试图案）能在
+Task 4/5/6/7/8 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合成的彩条测试图案）能在
 `Stage("ImmersiveStage")` 里通过 `VideoPlayerComponent` + `CypressMediaPlayer` 正确渲染播放（模拟器截图确认，
 时间码/帧计数器清晰可见）；银幕下方的 HUD 播放控制条（播放/暂停/退出）正确显示，loading 层在首帧渲染后正确隐藏，
 点退出能正常 `closeStage()` 回到主窗口；360°/180° 测试视频都用移植自 StoryPico 项目的 `MeshGenerator`（手写网格 +
 `createWithMeshModel`）渲染，360° 完整包裹视野无接缝（截图确认），180° 前方视野正确显示（截图确认，但转身后半球
-背面是否真的留空——没找到能在模拟器里无头模拟转身的办法，这一点只有代码层面的把握，不是实机验证过的）。HUD 独立于
-视频实体，三种模式下都能看到。全程无崩溃。
+背面是否真的留空——没找到能在模拟器里无头模拟转身的办法，这一点只有代码层面的把握，不是实机验证过的）；电影院/海景
+两个沉浸环境切换过程中测试视频持续播放不中断、HUD 与主窗口的环境选择状态同步一致（星空环境的画面本身没单独截图
+确认到，见下面的坑，但代码路径和另外两个完全相同）。HUD 独立于视频实体，三种视频模式下都能看到。全程无崩溃。
 
 ## 为什么这么设计
 
@@ -90,6 +91,18 @@ Task 4/5/6/7 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg
 - **PICO 模拟器没有找到无头方式模拟头部 6dof 转身**——控制台的 `rotate` 命令只转 2D 屏幕方向，`physics`/`sensor`
   子命令不支持直接设置姿态。需要验证"转身之后看到什么"这类效果时，如实说明这一步验证不了，不要假装截图证明了转身
   后的画面。
+- **环境天空盒同样不需要 Spatial Editor / `.bundle`，也是一个大号球体 `Entity`。** 和视频球体（`ecs/MeshGenerator.kt`）
+  共用同一个网格生成函数，只是材质换成 `UnlitMaterial`（静态图片）而不是 `VideoMaterial`（视频）；剔除模式也不一样，
+  `UnlitMaterial` 天空盒用 `MaterialCullingMode.BACK`（不是视频球体的 `NONE`）——这是照抄 StoryPico
+  `SkyboxPlayableEntity` 的组合，两个具体数值都不要混用。
+- **`StageEnvironmentLightingComponent` 需要 `.ktx` HDR cubemap，本机没有编码工具（`toktx` 等）**，Stage 1 里没有接入
+  这个组件，只做了天空盒贴图切换（纯视觉，没有真实环境光照/反射）。构造签名是
+  `StageEnvironmentLightingComponent(source: ImageBasedLightSource, intensityExponent: Float)`，真的要做的话先解决
+  `.ktx` 资产从哪来的问题。
+- **会话轮次之间的实际耗时不完全可控**，用 `sleep N` 卡固定延迟去截图某个"播放 N 秒后应该处于的状态"这类验证方式不
+  可靠——写代码到实际截图之间可能隔了好几个工具调用/来回，真实经过的时间比 `sleep` 参数加起来大得多。需要卡时间窗口
+  截图验证时，留足够宽的余量，或者接受"这个中间状态没能截图确认，但代码路径和已确认的状态相同"这种结论，不要为了
+  凑一张截图反复重跑。
 
 ## 关键文件
 
@@ -120,11 +133,14 @@ Task 4/5/6/7 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg
   `startTestPlayback`/`startSphereTestPlayback`/`startHemisphereTestPlayback` 三个入口。
 - `di/PlaybackModule.kt` — Koin session scope，让 `DefaultWindowContainer` 和 `Stage` 两棵独立 Compose 树共享同一个
   `PlaybackViewModel`/`CypressMediaPlayer` 实例。
-- `ui/PlaybackHud.kt`、`ui/LoadingErrorAttachment.kt` — HUD 播放控制条（播放/暂停/退出）和 loading/error 覆盖层，
-  **不**挂在 `screenEntity`/`sphereEntity` 下面（见上面"子实体可见性跟随父实体"那条坑），独立加入内容树，固定绝对
-  坐标（用户前方 1.5 米）。
+- `ui/PlaybackHud.kt`、`ui/LoadingErrorAttachment.kt` — HUD 播放控制条（播放/暂停/退出/环境切换）和 loading/error
+  覆盖层，**不**挂在 `screenEntity`/`sphereEntity`/`hemisphereEntity`/环境实体下面（见上面"子实体可见性跟随父实体"
+  那条坑），独立加入内容树，固定绝对坐标（用户前方 1.5 米）。HUD 只在 `isFlatProjection` 为真时显示环境切换按钮组，
+  球体/半球模式显示"全景视频 · 自动沉浸"提示文案。
 - `ui/ImmersiveScene.kt` — `SpatialView(attachments = {...}, initial = {...}, update = {...})`：`update` 块里
   用 `PlaybackViewModel.showLoadingOverlay` 互斥控制 loading/HUD 两个 attachment 的 `enabled`。
+- `playback/Environment.kt` — `CINEMA`/`STARRY_SKY`/`SEASIDE` 三态枚举，自带 `assetPath`/`label`。
+- `app/src/main/assets/skyboxes/*.jpg` — ffmpeg 生成的三张 2048×1024 渐变占位天空盒贴图（不是真实 HDRI）。
 - `app/build.gradle.kts` / `gradle/libs.versions.toml` — `spatialBom = "0.13.3"`，`compileSdk/minSdk/targetSdk
   = 35`，加了 `koin-android:3.5.6`，无 Material/Material3 依赖（SpatialUI-only 自检通过）。
 
@@ -136,7 +152,9 @@ Task 4/5/6/7 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg
 - `AttachmentPanel`（HUD + loading/error）+ `closeStage()` 退出流程——已跑通并截图验证
 - `MeshResource.createWithMeshModel` + 手写 `MeshModel`（`ecs/MeshGenerator.kt`）——360°/180° 球体/半球播放已跑通
   并截图验证（180° 转身后背面留空这一点未做实机验证，见上面的坑）
-- 还没用到：`StageEnvironmentLightingComponent`（Task 8）
+- 环境天空盒（`ModelComponent` + `UnlitMaterial` + 复用的球体网格）+ 播放中实时切换——已跑通并截图验证（电影院/海景，
+  星空同代码路径未单独截图确认，见上面的坑）
+- 还没用到：`StageEnvironmentLightingComponent`（需要 `.ktx` HDR cubemap，本机没有编码工具，Stage 1 不做）
 
 ## 如何构建/安装/运行
 
@@ -152,5 +170,6 @@ pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
 
 ## 下一步
 
-Task 8：三个沉浸式环境（电影院/星空/海景）+ 播放中实时切换。这一步需要天空盒/环境资产（HDRI 或简化 3D 场景）和
-`StageEnvironmentLightingComponent`，两者目前都还没查过确切 API，动手前先查文档。
+Task 9：Stage 1 端到端回归——全量重新构建 + 单元测试 + 六条路径依次走查（平面+电影院/星空/海景切换、180°、360°、
+退出回主窗口），更新本文件的完成状态收尾。之后 Stage 1 就算完成，可以开始规划 Stage 2（真实文件库 UI + 格式识别 +
+历史，设计见 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md` 第 2/4 节）。
