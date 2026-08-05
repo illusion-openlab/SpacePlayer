@@ -1624,7 +1624,7 @@ git commit -m "Add cinema/starry-sky/seaside environments with live switching"
 - Consumes: Task 1-8 的全部产出
 - Produces: 无新接口；这是回归验证 Task。
 
-- [ ] **Step 1: 全量重新构建**
+- [x] **Step 1: 全量重新构建**
 
 ```bash
 ./gradlew clean assembleDebug
@@ -1633,29 +1633,61 @@ git commit -m "Add cinema/starry-sky/seaside environments with live switching"
 
 预期：`assembleDebug` 成功；`StereoModeMappingTest` 的 4 个用例全部 PASS。
 
-- [ ] **Step 2: 逐一走查六条路径**
+**实际结果**：`clean assembleDebug` 和 `:app:testDebugUnitTest` 均 `BUILD SUCCESSFUL`（先在加临时调试触发器之前跑
+了一遍确认基线，六条路径走查完、临时代码删除后又跑了一遍 `clean assembleDebug :app:testDebugUnitTest` 确认收尾干
+净），测试结果 5/5 通过（脚手架自带的 `ExampleUnitTest` 1 个 + `StereoModeMappingTest` 4 个）。
+
+- [x] **Step 2: 逐一走查六条路径**
 
 ```bash
-pico-cli app install app/build/outputs/apk/debug/app-debug.apk
-adb logcat -c
-pico-cli app launch tech.illusion.spaceplayer
+pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
+pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
 ```
 
 依次手动触发并各截一张图到 `./artifacts/task9-regression-*.png`：平面+电影院、平面+星空、平面+海景（同一次播放里切换）、180°、360°、退出回主窗口。
 
 ```bash
-adb logcat -b crash -d
+adb -s emulator-5554 logcat -d -t 300 | grep -iE "FATAL|AndroidRuntime|tech.illusion.spaceplayer"
 ```
 
 预期：六张截图都符合设计稿第 1/3 节描述的画面；全程无新增崩溃。
 
-- [ ] **Step 3: 更新 `AGENTS.md`**
+**实际结果**：六条路径全部截图确认（`task9-regression-1-flat-cinema.png` ~
+`task9-regression-6-exit-main.png`），沿用 Task 4-8 里"`adb shell input tap` 对 spatial 容器不可靠"这条已知限
+制的临时解法——在 `PlaceholderMainScreen.kt` 里逐条替换 `LaunchedEffect(Unit) { ... }` 自动触发对应路径，截图后
+再替换成下一条，六条全部走完后整体删除（含 `delay` import 的引入和移除）。逐条结果：
+1. 平面+电影院：银幕/HUD/主窗口面板位置关系与 Task 6 已确认状态一致。
+2. 平面+星空：Task 8 时没能单独截到的星空环境这次补上了，渐变占位贴图正常显示，HUD `[星空]` 高亮正确。
+3. 平面+海景：**没有按"播放前预选"的方式测，而是先用电影院环境进入沉浸播放，`delay(4000)` 后再
+   `switchEnvironment(SEASIDE)`**——这样才是真正测到计划里"（同一次播放里切换）"这个括号批注要求的场景。截图确
+   认背景从电影院渐变切换成海景渐变的同时，视频播放没有重置/中断，直接验证了设计稿"沉浸中也能实时切换"的核心
+   需求（而不只是"进入沉浸前选好环境"这种更弱的场景）。
+4. 180°半球：画面铺满视野（同一相机默认位置观察不到"转身后背面留空"，这一点维持 Task 7/8 就有的结论——只有代码
+   层面把握，没有实机头部转向验证手段）。
+5. 360°球体：画面完整包裹视野，与半球模式对比可见明显差异（球体看不到任何面板边缘，半球在默认视角内能看到）。
+6. 退出回主窗口：用 `delay(4000)` 后调用 `viewModel.exitImmersive()` + `navigator.closeStage()`（和 HUD 的
+   `onExit` 回调完全一致的调用序列）验证退出流程，截图确认模拟器 passthrough 房间正常显示、主窗口 UI 正常、无
+   视频/天空盒/HUD 残留。
+
+全程六次 `adb logcat` 抓取均未见 `FATAL`/`AndroidRuntime`，只有正常的 `SpatialRuntimeService: Watchdog` 和
+`AppRecordManagerService` 日志。
+
+- [x] **Step 3: 更新 `AGENTS.md`**
 
 写清楚：Stage 1 已完成的范围（本文件 Task 1-8 覆盖的内容）、Task 6/8 里"查文档后再定"的两处最终采用了什么方案（程序化 API 还是 Editor 导出的 bundle，bundle 放在哪）、构建/安装/运行命令、下一步是 Stage 2（真实文件库 UI + 格式识别 + 历史，设计见 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md` 第 2/4 节）。
 
-- [ ] **Step 4: 提交**
+**实际结果**：`AGENTS.md` 顶部摘要改成"Stage 1 已全部完成（Task 1-9）"，加了 Task 9 六条路径回归结果的完整记录
+（含路径 3 的"同一次播放里切换"细节和路径 2 补拍的星空截图），"已用的 Spatial SDK 能力"里天空盒那条去掉了"星空
+未单独截图确认"的旧待办说明（已解决），"下一步"改成指向 Stage 2 并具体点明 `PlaceholderMainScreen.kt` 是下一步
+要替换的占位 UI。程序化 API vs Editor bundle 这一点：Stage 1 全程没用到 Spatial Editor 导出的 `.bundle`，球体/
+半球/天空盒都是手写 `MeshResource.createWithMeshModel`（移植自 StoryPico），这一点在 Task 7/8 阶段的 AGENTS.md
+记录里已经写清楚了，Task 9 没有新变化。
+
+- [x] **Step 4: 提交**
 
 ```bash
 git add -A
 git commit -m "Stage 1 regression pass + AGENTS.md update"
 ```
+
+**实际结果**：见下方 commit（六张回归截图 + `AGENTS.md`/本计划文件更新一并提交）。

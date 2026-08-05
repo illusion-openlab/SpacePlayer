@@ -6,10 +6,10 @@
 visionOS 应用 [Moon Player](https://moonvrplayer.com/zh/moon-player-apple-vision-pro)。完整产品规划见
 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md`。
 
-当前处于 **Stage 1（项目骨架 + 沉浸播放核心），Task 1-8 已完成并验证**，计划见
+**Stage 1（项目骨架 + 沉浸播放核心）已全部完成（Task 1-9），Stage 1 收尾**，计划见
 `docs/superpowers/plans/2026-08-05-stage1-immersive-playback-core.md`。Stage 1 只用硬编码测试视频跑通
 "平面 → 环境化平面（电影院/星空/海景，可实时切换）→ 180°半球 → 360°球体" 这条播放链路，不含真实文件库 UI
-（Stage 2）、不含字幕（Stage 3）。只剩 Task 9（端到端回归）。
+（Stage 2）、不含字幕（Stage 3）。下一步是规划 Stage 2。
 
 Task 4/5/6/7/8 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合成的彩条测试图案）能在
 `Stage("ImmersiveStage")` 里通过 `VideoPlayerComponent` + `CypressMediaPlayer` 正确渲染播放（模拟器截图确认，
@@ -17,8 +17,16 @@ Task 4/5/6/7/8 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmp
 点退出能正常 `closeStage()` 回到主窗口；360°/180° 测试视频都用移植自 StoryPico 项目的 `MeshGenerator`（手写网格 +
 `createWithMeshModel`）渲染，360° 完整包裹视野无接缝（截图确认），180° 前方视野正确显示（截图确认，但转身后半球
 背面是否真的留空——没找到能在模拟器里无头模拟转身的办法，这一点只有代码层面的把握，不是实机验证过的）；电影院/海景
-两个沉浸环境切换过程中测试视频持续播放不中断、HUD 与主窗口的环境选择状态同步一致（星空环境的画面本身没单独截图
-确认到，见下面的坑，但代码路径和另外两个完全相同）。HUD 独立于视频实体，三种视频模式下都能看到。全程无崩溃。
+两个沉浸环境切换过程中测试视频持续播放不中断、HUD 与主窗口的环境选择状态同步一致。HUD 独立于视频实体，三种视频模式
+下都能看到。全程无崩溃。
+
+Task 9（端到端回归，六条路径全部截图确认，见 `./artifacts/task9-regression-{1..6}-*.png`）：
+1. 平面 + 电影院 2. 平面 + 星空（星空环境画面本身在 Task 8 时没单独截图确认，这次补上了，渐变占位贴图正常显示）
+3. 平面 + 海景，**且是在已经沉浸播放中途实时切换过去的**（不是播放前预选）——背景从电影院渐变切到海景渐变的同时
+视频播放没有中断，直接验证了"沉浸中也能实时切换环境"这条核心需求 4. 180° 半球 5. 360° 球体 6. 退出沉浸回到主窗口
+（`exitImmersive()` + `closeStage()` 后模拟器 passthrough 房间正常显示，主窗口 UI 正常，无视频/天空盒/HUD 残留）。
+`./gradlew clean assembleDebug`、`:app:testDebugUnitTest`（5/5 通过）均成功。全程无崩溃（`adb logcat` 确认，
+仅有正常的 Watchdog/AppRecordManagerService 日志，无 FATAL/AndroidRuntime）。
 
 ## 为什么这么设计
 
@@ -152,8 +160,8 @@ Task 4/5/6/7/8 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmp
 - `AttachmentPanel`（HUD + loading/error）+ `closeStage()` 退出流程——已跑通并截图验证
 - `MeshResource.createWithMeshModel` + 手写 `MeshModel`（`ecs/MeshGenerator.kt`）——360°/180° 球体/半球播放已跑通
   并截图验证（180° 转身后背面留空这一点未做实机验证，见上面的坑）
-- 环境天空盒（`ModelComponent` + `UnlitMaterial` + 复用的球体网格）+ 播放中实时切换——已跑通并截图验证（电影院/海景，
-  星空同代码路径未单独截图确认，见上面的坑）
+- 环境天空盒（`ModelComponent` + `UnlitMaterial` + 复用的球体网格）+ 播放中实时切换——三个环境（电影院/星空/海景）
+  都已截图验证，其中海景是在沉浸播放中途实时切换过去的，直接验证了核心需求
 - 还没用到：`StageEnvironmentLightingComponent`（需要 `.ktx` HDR cubemap，本机没有编码工具，Stage 1 不做）
 
 ## 如何构建/安装/运行
@@ -170,6 +178,8 @@ pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
 
 ## 下一步
 
-Task 9：Stage 1 端到端回归——全量重新构建 + 单元测试 + 六条路径依次走查（平面+电影院/星空/海景切换、180°、360°、
-退出回主窗口），更新本文件的完成状态收尾。之后 Stage 1 就算完成，可以开始规划 Stage 2（真实文件库 UI + 格式识别 +
-历史，设计见 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md` 第 2/4 节）。
+Stage 1 已完成。下一步是规划并实现 **Stage 2（真实文件库 UI + 格式识别 + 播放历史）**，设计见
+`docs/superpowers/specs/2026-08-05-spaceplayer-design.md` 第 2/4 节。`PlaceholderMainScreen.kt` 目前还是
+Stage 1 的手动测试占位 UI（三个固定测试视频按钮 + 环境切换按钮），Stage 2 需要把它换成真实的本机文件浏览/选择界面，
+并接入文件名+容器探测的格式识别逻辑（`playback/Projection.kt`/`playback/StereoMode.kt` 已经是这条链路的类型定义，
+Stage 2 要补的是"怎么从一个真实文件推断出这两个枚举值"，而不是像现在这样由测试按钮直接指定）。
