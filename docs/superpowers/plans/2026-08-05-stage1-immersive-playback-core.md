@@ -403,7 +403,8 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 - Create: `app/src/main/java/tech/illusion/spaceplayer/ui/ImmersiveScene.kt`
 - Create: `app/src/main/java/tech/illusion/spaceplayer/ui/PlaceholderMainScreen.kt`
 - Modify: `app/src/main/java/tech/illusion/spaceplayer/platform/SpatialApplication.kt`（加 Koin 初始化）
-- Modify: `app/src/main/AndroidManifest.xml`（声明 `pico.spatial.stage.id` 等非默认 Stage 属性，若模板要求）
+- Modify: `app/src/main/AndroidManifest.xml`（把生成模板的 `pico.spatial.stage.*` 换成 `pico.spatial.windowcontainer.*`，含必需的 `.id` 字段——见 Step 7.5）
+- Delete: `app/src/main/java/tech/illusion/spaceplayer/content/HomeStage.kt`、`app/src/main/assets/box.usdz`（脚手架占位内容，不再需要）
 
 **Interfaces:**
 - Consumes: `PlaybackManager`（Task 2）、`StereoMode.toVideoDimensionMode()`（Task 3）、SDK 的 `MeshResource.createVideoPanel(width, height, cornerRadius)`、`VideoMaterial(blendingMode, dimensionMode, cullingMode)`、`VideoPlayerComponent(player, mesh, material)`、`Entity`、`Stage(id, ...) { }` DSL、`LocalSpatialNavigator.current.openStage(id, style)` / `.closeStage()`
@@ -419,30 +420,35 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
       )
   }
 
-  class PlaybackViewModel : ViewModel() {
+  class PlaybackViewModel(context: Context) {  // 普通类，Koin scoped，不继承 androidx ViewModel
       val manager: PlaybackManager
       val screenEntity: Entity
       var isImmersive: Boolean
 
       fun startTestPlayback(assetPath: String, stereoMode: StereoMode)
       fun exitImmersive()
+      fun onCleared()  // 普通方法，不是覆写
   }
   ```
   Task 5（HUD）、Task 6/7（球体/半球）、Task 8（环境层）都在 `PlaybackViewModel`/`PlaybackEntityAssembler` 上继续加方法，不改这两个已产出的签名。
 
-- [ ] **Step 1: `PlaybackEntityAssembler.kt`——平面银幕实体**
+- [x] **Step 1: `PlaybackEntityAssembler.kt`——平面银幕实体**
+
+真实包名（`./gradlew assembleDebug` 编译通过后确认，和计划撰写时的猜测有两处不同：`VideoPlayerComponent` 在 `com.pico.spatial.core.ecs`，`VideoMaterial`/`MaterialCullingMode`/`BlendingMode`/`MeshResource` 在 `com.pico.spatial.core.ecs.resource`，都不在 `.video` 子包下）：
 
 ```kotlin
 package tech.illusion.spaceplayer.ecs
 
 import com.pico.spatial.core.ecs.Entity
+import com.pico.spatial.core.ecs.TransformComponent
+import com.pico.spatial.core.ecs.VideoPlayerComponent
+import com.pico.spatial.core.ecs.resource.BlendingMode
+import com.pico.spatial.core.ecs.resource.MaterialCullingMode
 import com.pico.spatial.core.ecs.resource.MeshResource
-import com.pico.spatial.core.ecs.video.BlendingMode
-import com.pico.spatial.core.ecs.video.MaterialCullingMode
+import com.pico.spatial.core.ecs.resource.VideoMaterial
+import com.pico.spatial.core.ecs.video.CypressMediaPlayer
 import com.pico.spatial.core.ecs.video.VideoDimensionMode
-import com.pico.spatial.core.ecs.video.VideoMaterial
-import com.pico.spatial.core.ecs.video.VideoPlayerComponent
-import com.pico.spatial.core.video.CypressMediaPlayer
+import com.pico.spatial.core.math.Vector3
 
 object PlaybackEntityAssembler {
 
@@ -457,13 +463,23 @@ object PlaybackEntityAssembler {
         check(mesh.valid) { "createVideoPanel returned an invalid mesh" }
         val material = VideoMaterial(BlendingMode.OPAQUE, dimensionMode, MaterialCullingMode.BACK)
         entity.components.set(VideoPlayerComponent(player, mesh, material))
+        // Entity() already carries a default TransformComponent - components.set() with a NEW
+        // instance is rejected at runtime ("component already exists", logged as an E without
+        // crashing) and silently no-ops. Mutate the existing one instead, the same way the
+        // pico-cli stage template's HomeStage.kt does it for its box model. Without this the
+        // panel sits at the world origin, which is at/behind the user's spawn point inside a
+        // Stage (unlike a WindowContainer, which the system positions for readability
+        // automatically) - and is therefore invisible. This cost real debugging time (see Step 8
+        // for the full trail: black-screen → red-background diagnostic → logcat "component
+        // already exists" → this fix), so don't regress it.
+        entity.components[TransformComponent::class.java]?.apply {
+            setPosition(Vector3(0f, 1.5f, -2f))
+        }
     }
 }
 ```
 
-> 备注：`BlendingMode`/`MaterialCullingMode`/`VideoMaterial`/`VideoPlayerComponent` 的确切包名以 Task 1 生成项目实际能 import 到的为准（和 `CypressMediaPlayer` 一样，用 IDE 跳转确认，不要凭空猜）。
-
-- [ ] **Step 2: `PlaybackModule.kt`——Koin session scope**
+- [x] **Step 2: `PlaybackModule.kt`——Koin session scope**
 
 ```kotlin
 package tech.illusion.spaceplayer.di
@@ -481,16 +497,17 @@ val playbackModule = module {
 }
 ```
 
-（`app/build.gradle.kts` 需要加 Koin 依赖：`implementation(libs.koin.android)`——若版本目录 `libs.versions.toml` 里没有 Koin 坐标，手动加一行 `koin-android = { module = "io.insert-koin:koin-android", version = "3.5.6" }` 及对应 `[versions]` 条目，参考官方示例项目同款依赖写法。）
+`app/build.gradle.kts` 加了 `implementation(libs.koin.android)`，`gradle/libs.versions.toml` 加了 `koin = "3.5.6"` + `koin-android = { group = "io.insert-koin", name = "koin-android", version.ref = "koin" }`（用 `group`/`name` 两个字段，不是一个 `module` 字符串——这是当前版本目录 TOML 语法要求的写法）。
 
-- [ ] **Step 3: `PlaybackViewModel.kt`**
+- [x] **Step 3: `PlaybackViewModel.kt`**
+
+不继承 `androidx.lifecycle.ViewModel`——它是 Koin session-scope 里的一个普通类（`scoped { PlaybackViewModel(get()) }`），生命周期由 Koin scope 管理，不需要也不依赖 `ViewModelStoreOwner`；`onCleared()` 是个普通方法，不是覆写。
 
 ```kotlin
 package tech.illusion.spaceplayer.ui
 
 import android.content.Context
 import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.ViewModel
 import com.pico.spatial.core.ecs.Entity
 import tech.illusion.spaceplayer.ecs.PlaybackEntityAssembler
 import tech.illusion.spaceplayer.playback.PlaybackManager
@@ -499,7 +516,7 @@ import tech.illusion.spaceplayer.playback.StereoMode
 const val SCREEN_WIDTH_METERS = 1.6f
 const val SCREEN_HEIGHT_METERS = 0.9f
 
-class PlaybackViewModel(context: Context) : ViewModel() {
+class PlaybackViewModel(context: Context) {
     val manager = PlaybackManager(context)
     val screenEntity = Entity()
 
@@ -528,76 +545,91 @@ class PlaybackViewModel(context: Context) : ViewModel() {
         isImmersive.value = false
     }
 
-    override fun onCleared() {
-        super.onCleared()
+    fun onCleared() {
         manager.reset()
     }
 }
 ```
 
-- [ ] **Step 4: `ImmersiveScene.kt`——Stage 内容**
+- [x] **Step 4: `ImmersiveScene.kt`——Stage 内容**
+
+真实 API：`SpatialView` 在 `com.pico.spatial.ui.foundation.content`（不是计划撰写时猜测的 `LocalSpatialContent`——那个符号在当前 SDK 里不存在），写法和官方 "Play spatial video in an app" 示例一致：
 
 ```kotlin
 package tech.illusion.spaceplayer.ui
 
 import androidx.compose.runtime.Composable
 import com.pico.spatial.ui.design.PicoTheme
-import com.pico.spatial.ui.platform.LocalSpatialContent
-import org.koin.androidx.compose.koinViewModel
+import com.pico.spatial.ui.foundation.content.SpatialView
 import org.koin.core.context.GlobalContext
-import org.koin.core.qualifier.named
 import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
 
 @Composable
 fun ImmersiveScene() {
     val scope = GlobalContext.get().getScope(PLAYBACK_SESSION_SCOPE_ID)
     val viewModel: PlaybackViewModel = scope.get()
+
     PicoTheme {
-        LocalSpatialContent.current.addEntity(viewModel.screenEntity)
+        SpatialView(
+            initial = { content, _ ->
+                content.addEntity(viewModel.screenEntity)
+            },
+        )
     }
 }
 ```
 
-> 备注：把实体加进 Stage 内容树的确切 API（`LocalSpatialContent`/`SpatialView { content -> content.addEntity(...) }` 等）以官方示例 `spatial-sdk_video_sample-play-spatial-video-in-an-app.md` 里 `SpatialView(initial = { content, attachments -> content.addEntity(...) })` 的写法为准，如果 `LocalSpatialContent` 这个符号在当前 SDK 里不存在，改用该示例里验证过的 `SpatialView` 写法。
+- [x] **Step 5: `Main.kt`——声明容器**
 
-- [ ] **Step 5: `Main.kt`——声明容器**
+真实 import：`DefaultWindowContainer`/`Stage`/`SpatialAppScope` 都在 `com.pico.spatial.ui.foundation.dsl`（不是计划撰写时猜测的 `com.pico.spatial.core.platform`/`com.pico.spatial.ui.platform.containers`——`pico-cli --template stage` 生成的 `Main.kt` 里 `DefaultStage`/`SpatialAppScope` 就是从 `dsl` 包 import 的，`DefaultWindowContainer`/`Stage` 是它的同包兄弟函数，一次性验证对了）：
 
 ```kotlin
 package tech.illusion.spaceplayer
 
-import com.pico.spatial.core.platform.SpatialAppScope
-import com.pico.spatial.ui.platform.containers.DefaultWindowContainer
-import com.pico.spatial.ui.platform.containers.Stage
+import com.pico.spatial.ui.foundation.dsl.DefaultWindowContainer
+import com.pico.spatial.ui.foundation.dsl.SpatialAppScope
+import com.pico.spatial.ui.foundation.dsl.Stage
 import tech.illusion.spaceplayer.ui.ImmersiveScene
 import tech.illusion.spaceplayer.ui.PlaceholderMainScreen
 
 const val IMMERSIVE_STAGE_ID = "ImmersiveStage"
 
-fun mainApp(scope: SpatialAppScope) = with(scope) {
-    DefaultWindowContainer {
-        PlaceholderMainScreen()
-    }
+fun mainApp(scope: SpatialAppScope) =
+    with(scope) {
+        DefaultWindowContainer {
+            PlaceholderMainScreen()
+        }
 
-    Stage(id = IMMERSIVE_STAGE_ID) {
-        ImmersiveScene()
+        Stage(id = IMMERSIVE_STAGE_ID) {
+            ImmersiveScene()
+        }
     }
-}
 ```
 
-- [ ] **Step 6: `PlaceholderMainScreen.kt`——手动测试入口**
+`pico-cli --template stage` 生成的骨架默认容器是 `DefaultStage`（脚手架自带的 `content/HomeStage.kt` 示例：一个 `box.usdz` 模型 + "Hello, Spatial SDK!" 文字面板）——这两个文件在这一步删掉了（`git rm`），因为设计要求默认容器是平面主窗口，不是 Stage。
+
+- [x] **Step 6: `PlaceholderMainScreen.kt`——手动测试入口**
+
+真实 import：`Button`/`Text`/`PicoTheme` 在 `com.pico.spatial.ui.design`；`LocalSpatialNavigator`/`StageStyle` 在 `com.pico.spatial.ui.platform.containers`（不是计划撰写时猜测的 `com.pico.spatial.ui.platform`）。**关键坑**：`Text`/`Button` 不设置 `style`/`fontSize` 会渲染成实际不可见的默认大小（真机/模拟器截图里完全看不到，哪怕不透明背景色块能正常显示）——必须像脚手架 `HomeStage.kt` 的示例一样显式给 `style = PicoTheme.typography.titleLarge.copy(fontSize = ...)`：
 
 ```kotlin
 package tech.illusion.spaceplayer.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pico.spatial.ui.design.Button
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
-import com.pico.spatial.ui.platform.LocalSpatialNavigator
+import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
 import com.pico.spatial.ui.platform.containers.StageStyle
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
 import org.koin.core.context.GlobalContext
 import tech.illusion.spaceplayer.IMMERSIVE_STAGE_ID
 import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
@@ -607,58 +639,103 @@ import tech.illusion.spaceplayer.playback.StereoMode
 fun PlaceholderMainScreen() {
     val scope = GlobalContext.get().getScope(PLAYBACK_SESSION_SCOPE_ID)
     val viewModel: PlaybackViewModel = scope.get()
+    val navigator = LocalSpatialNavigator.current
     val coroutineScope = rememberCoroutineScope()
 
     PicoTheme {
-        Column {
-            Text("SpacePlayer · Stage 1 手动测试")
+        Column(modifier = Modifier.fillMaxSize().padding(32.dp)) {
+            Text(
+                text = "SpacePlayer · Stage 1 手动测试",
+                color = PicoTheme.colorScheme.labelPrimary,
+                style = PicoTheme.typography.titleLarge.copy(fontSize = 40.sp),
+            )
             Button(onClick = {
                 viewModel.startTestPlayback("videos/sample_flat_test.mp4", StereoMode.MONO)
                 coroutineScope.launch {
-                    LocalSpatialNavigator.current.openStage(IMMERSIVE_STAGE_ID, style = StageStyle.Full)
+                    navigator.openStage(IMMERSIVE_STAGE_ID, style = StageStyle.Full)
                 }
             }) {
-                Text("播放测试视频（平面）")
+                Text(
+                    text = "播放测试视频（平面）",
+                    color = PicoTheme.colorScheme.labelPrimary,
+                    style = PicoTheme.typography.titleLarge.copy(fontSize = 32.sp),
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }
 }
 ```
 
-> 备注：`Button`/`Text`/`Column` 等具体从哪个 SpatialUI 包 import、`LocalSpatialNavigator.current` 在 `@Composable` 外要不要 `remember`，以生成项目模板里已有的示例 Composable 写法为准——`pico-cli` 生成的骨架里通常会带一两个示例屏幕，照抄它的 import 和写法比凭空猜更可靠。
-
-- [ ] **Step 7: `SpatialApplication.kt`——接入 Koin**
-
-在 `platform/SpatialApplication.kt` 的 `onCreate`（或等价初始化点）里加：
+- [x] **Step 7: `SpatialApplication.kt`——接入 Koin**
 
 ```kotlin
-startKoin {
-    androidContext(this@SpatialApplication)
-    modules(playbackModule)
+package tech.illusion.spaceplayer.platform
+
+import android.app.Application
+import com.pico.spatial.ui.foundation.dsl.launch
+import org.koin.android.ext.koin.androidContext
+import org.koin.core.context.GlobalContext
+import org.koin.core.context.startKoin
+import org.koin.core.qualifier.named
+import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
+import tech.illusion.spaceplayer.di.playbackModule
+import tech.illusion.spaceplayer.mainApp
+
+class SpatialApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        startKoin {
+            androidContext(this@SpatialApplication)
+            modules(playbackModule)
+        }
+        GlobalContext.get().createScope(PLAYBACK_SESSION_SCOPE_ID, named(PLAYBACK_SESSION_SCOPE_ID))
+        launch(::mainApp)
+    }
 }
-GlobalContext.get().createScope(PLAYBACK_SESSION_SCOPE_ID, named(PLAYBACK_SESSION_SCOPE_ID))
 ```
 
-- [ ] **Step 8: 构建、安装、启动、截图验证**
+- [x] **Step 7.5（新增，计划撰写时未预见）：`AndroidManifest.xml`——`pico.spatial.windowcontainer.id` 是必需的**
+
+把默认容器从生成模板的 `DefaultStage`（`pico.spatial.stage.*` meta-data）换成 `DefaultWindowContainer` 后，第一次运行直接崩溃：
+
+```
+IllegalStateException: Only support [SUIStage,SUIWindowContainer], but got a
+[name = PICO_SYSTEM_DEFAULT_WINDOWCONTAINER, class = class com.pico.spatial.core.container.WindowContainer].
+You cannot merely register non-default containers in the Manifest; you also need to register them in the DSL.
+```
+
+对比 SeasonsApp 的 `AndroidManifest.xml`（同样是 `DefaultWindowContainer`）才发现漏了 `pico.spatial.windowcontainer.id`——这是必需字段，作用和 Stage 的 `pico.spatial.stage.id` 一样，缺了它系统就没法把 Manifest 里的容器配置和 DSL 里 `DefaultWindowContainer{}` 注册的内容对上，会退化成一个内部占位容器直接崩溃。修法：
+
+```xml
+<meta-data
+    android:name="pico.spatial.windowcontainer.id"
+    android:value="SpacePlayerMainWindow" />
+```
+
+（加在 `pico.spatial.windowcontainer.style` 那条 meta-data 前面，同一个 `<activity>` 块里。）
+
+- [x] **Step 8: 构建、安装、启动、截图验证**
 
 ```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew assembleDebug
-pico-cli app install app/build/outputs/apk/debug/app-debug.apk
-adb logcat -c
-pico-cli app launch tech.illusion.spaceplayer
-pico-cli capture screenshot --out ./artifacts/task4-main-screen.png
+pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
+adb -s emulator-5554 logcat -c
+pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
+# 主窗口渲染有延迟，冷启动后 sleep 8-10s 再截图比较稳（sleep 4-6s 有时还没渲染完）
+pico-cli capture screenshot --out ./artifacts/task4-main-screen.png --device emulator-5554
 ```
 
-在截图/模拟器画面里点击"播放测试视频（平面）"按钮，再截一次图：
+结果：截图能看到主窗口标题"SpacePlayer · Stage 1 手动测试"和按钮"播放测试视频（平面）"，`adb logcat -b crash -d` 无崩溃。
 
-```bash
-pico-cli capture screenshot --out ./artifacts/task4-flat-playing.png
-adb logcat -b crash -d
-```
+**验证"点击按钮进入沉浸态播放"这条路径时踩了一个工具限制**：`adb shell input tap x y` 对空间容器不可靠（`spatial-emulator-usage`/`spatial-app-dev-workflow` 两个技能都明确写了这一条——2D 坐标注入不能可靠触发 spatial 容器的交互），试了几次坐标都没反应，且不应该继续试坐标（技能原文："when this limitation blocks a verification flow, say so clearly instead of spending turns retrying different tap coordinates"）。改用临时诊断手段：在 `PlaceholderMainScreen` 里加一个 `LaunchedEffect(Unit) { ... }`，自动触发和按钮 `onClick` 完全相同的代码路径（`startTestPlayback` + `openStage`），验证完就删掉，不留在最终代码里。
 
-预期：第二张截图能看到 `sample_flat_test.mp4` 以一块矩形银幕的形式在沉浸空间里播放；`adb logcat -b crash -d` 无新增崩溃。
+用这个临时手段验证时，还发现并修了两个真问题（已经体现在上面 Step 1/6 的最终代码里，这里记录发现过程）：
+1. 黑色背景确认 `StageStyle.Full` 生效（正确——Task 8 之前本来就没有环境天空盒，纯黑是预期行为），但银幕完全不可见——加了一个纯红色 `Modifier.background(Color.Red)` 背景块做对照，红色能看到，说明 Compose 内容树本身没问题，问题在具体某个子元素。
+2. `adb logcat -d --pid=<pid>` 里搜到 `E SpatialPack_SceneInspector: entityId = 1048576, component TransformComponent already exists`——`Entity()` 默认就带一个 `TransformComponent`，我又调用 `entity.components.set(TransformComponent()...)` 想新增一个，被拒绝、静默 no-op，银幕实体的位置从未被真正设置，停在世界原点（Stage 内无自动布局，原点通常在/接近用户出生点，看不见）。改成 `entity.components[TransformComponent::class.java]?.apply { setPosition(...) }`（取出已有的改，而不是塞一个新的）后，测试视频（`testsrc2` 彩条 + 时间码）正确显示在前方 2 米处的银幕上。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 git add -A

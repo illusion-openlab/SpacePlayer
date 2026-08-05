@@ -6,10 +6,14 @@
 visionOS 应用 [Moon Player](https://moonvrplayer.com/zh/moon-player-apple-vision-pro)。完整产品规划见
 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md`。
 
-当前处于 **Stage 1（项目骨架 + 沉浸播放核心）**，计划见
+当前处于 **Stage 1（项目骨架 + 沉浸播放核心），Task 1-4 已完成并验证**，计划见
 `docs/superpowers/plans/2026-08-05-stage1-immersive-playback-core.md`。Stage 1 只用硬编码测试视频跑通
 "平面 → 环境化平面（电影院/星空/海景，可实时切换）→ 180°半球 → 360°球体" 这条播放链路，不含真实文件库 UI
 （Stage 2）、不含字幕（Stage 3）。
+
+Task 4 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合成的彩条测试图案）已经能在
+`Stage("ImmersiveStage")` 里通过 `VideoPlayerComponent` + `CypressMediaPlayer` 正确渲染播放（模拟器截图确认，
+时间码/帧计数器清晰可见）。
 
 ## 为什么这么设计
 
@@ -47,28 +51,58 @@ visionOS 应用 [Moon Player](https://moonvrplayer.com/zh/moon-player-apple-visi
   `pico-cli setup --tool claude-code --plugin pico-spatial-agentic-tools` 重新拉取 agent-vault 6.0.2——如果
   MCP 工具在新会话里查不到文档，可能需要额外跑一次 `graphify build`（重建 `graph.json`，比 `setup` 慢很多，
   涉及语义抽取）。
+- **`adb shell input tap x y` 对空间容器（Stage、以及某些 WindowContainer 交互元素）不可靠**，2D 坐标注入不能
+  可靠触发 spatial UI 的点击——不要在这上面反复试坐标（`spatial-emulator-usage`/`spatial-app-dev-workflow` 两个
+  技能都写了这条限制）。需要验证"点击触发某个沉浸流程"时，临时在对应 Composable 里加一个
+  `LaunchedEffect(Unit) { /* 和 onClick 一样的代码 */ }` 自动触发，验证完删掉。
+- **模拟器冷启动后主窗口渲染有延迟**，`launch` 后至少 `sleep 8-10s` 再截图，`sleep 4-6s` 有时还看不到内容
+  （不是崩溃，只是还没渲染完）。
+- **`Entity()` 默认已经带一个 `TransformComponent`**——想设置位置用
+  `entity.components[TransformComponent::class.java]?.apply { setPosition(...) }`，不要
+  `entity.components.set(TransformComponent())`（会被拒绝，日志报 "component already exists" 但不崩溃，静默
+  no-op，位置永远设置不上，实体停在世界原点，在 Stage 里通常等于看不见——这个坑排查花了不少功夫，见 Stage 1
+  计划 Task 4 Step 8 的详细记录）。
+- **SpatialUI 的 `Text`/`Button` 不设置 `style`/`fontSize` 会渲染成实际不可见的默认字号**，即使背景色块本身能
+  正常显示。照抄 `content/HomeStage.kt`（Task 4 后已删除，但可以在 git 历史里找到）那样显式设置
+  `style = PicoTheme.typography.titleLarge.copy(fontSize = ...)`。
+- **默认 `DefaultWindowContainer` 必须在 `AndroidManifest.xml` 里加 `pico.spatial.windowcontainer.id`**（任意
+  唯一字符串），漏了会崩溃：`IllegalStateException: Only support [SUIStage,SUIWindowContainer], but got a
+  [name = PICO_SYSTEM_DEFAULT_WINDOWCONTAINER, ...]`。和 Stage 的 `pico.spatial.stage.id` 是同一类必需字段。
 
 ## 关键文件
 
-- `Main.kt` — `pico-cli` 生成时是 `DefaultStage { PicoTheme { HomeStage() } }`；Task 4 起会改造成
-  `DefaultWindowContainer`（占位主窗口）+ `Stage(id = "ImmersiveStage")` 两个容器。
-  **真实 import 路径**（比设计/计划文档写作时凭旧版文档猜测的更准确，以生成代码为准）：
-  `DefaultStage`/`SpatialAppScope` 来自 `com.pico.spatial.ui.foundation.dsl`；`SpatialView` 来自
-  `com.pico.spatial.ui.foundation.content`；`PicoTheme`/`Text` 来自 `com.pico.spatial.ui.design`；
-  frosted-glass 背景用 `com.pico.spatial.ui.foundation.material.backgroundMaterial` +
-  `com.pico.spatial.ui.platform.Material`（这是 SDK 自己的 `Material` 类型，不是 androidx Material/Material3，
-  没有违反 SpatialUI-only 规则）。`DefaultWindowContainer`/非默认 `Stage(...)`/`LocalSpatialNavigator`/
-  `StageStyle` 的确切 import 待 Task 4 实际编译验证后在这里更新。
-- `content/HomeStage.kt` — 脚手架自带示例：加载 `asset://box.usdz`，挂一个文字 `AttachmentPanel`。Task 4 后
-  会被 Stage 1 自己的 `ImmersiveScene.kt` 取代/共存。
+- `Main.kt` — `DefaultWindowContainer { PlaceholderMainScreen() }` + `Stage(id = "ImmersiveStage") {
+  ImmersiveScene() }`（`pico-cli` 生成时是 `DefaultStage { HomeStage() }`，Task 4 改造成现在这个形状，
+  `content/HomeStage.kt`/`assets/box.usdz` 已删除）。
+- **确认无误的真实 import 路径**（全部经 `./gradlew assembleDebug` 编译通过验证）：
+  - `DefaultWindowContainer`/`Stage`/`SpatialAppScope`/`launch` → `com.pico.spatial.ui.foundation.dsl`
+  - `SpatialView` → `com.pico.spatial.ui.foundation.content`
+  - `PicoTheme`/`Text`/`Button` → `com.pico.spatial.ui.design`
+  - `LocalSpatialNavigator`/`StageStyle` → `com.pico.spatial.ui.platform.containers`
+  - `Entity`/`TransformComponent`/`VideoPlayerComponent` → `com.pico.spatial.core.ecs`
+  - `CypressMediaPlayer`/`CypressMediaPlayerCallback`/`CypressMediaPlayerErrorCode`/`VideoDimensionMode` →
+    `com.pico.spatial.core.ecs.video`
+  - `VideoMaterial`/`MaterialCullingMode`/`BlendingMode`/`MeshResource` → `com.pico.spatial.core.ecs.resource`
+  - frosted-glass 背景：`com.pico.spatial.ui.foundation.material.backgroundMaterial` +
+    `com.pico.spatial.ui.platform.Material`（SDK 自己的 `Material` 类型，不是 androidx Material/Material3）
+- `playback/PlaybackManager.kt` — 封装 `CypressMediaPlayer` 生命周期（`setup`/`play`/`pause`/`seekTo`/`reset`）。
+- `playback/Projection.kt`、`playback/StereoMode.kt` — 投影/立体格式枚举，`StereoMode.toVideoDimensionMode()`
+  有单元测试（`StereoModeMappingTest`，4/4 通过）。
+- `ecs/PlaybackEntityAssembler.kt` — 组装银幕实体：`VideoPlayerComponent` + 显式设置 `TransformComponent` 位置
+  （见上面"必须设置位置"那条坑）。
+- `ui/PlaybackViewModel.kt` — Koin scoped 的共享状态（`screenEntity`、`manager`、`startTestPlayback`）。
+- `di/PlaybackModule.kt` — Koin session scope，让 `DefaultWindowContainer` 和 `Stage` 两棵独立 Compose 树共享同一个
+  `PlaybackViewModel`/`CypressMediaPlayer` 实例。
 - `app/build.gradle.kts` / `gradle/libs.versions.toml` — `spatialBom = "0.13.3"`，`compileSdk/minSdk/targetSdk
-  = 35`，无 Material/Material3 依赖（SpatialUI-only 自检通过）。
+  = 35`，加了 `koin-android:3.5.6`，无 Material/Material3 依赖（SpatialUI-only 自检通过）。
 
 ## 已用的 Spatial SDK 能力
 
-- `DefaultStage` + `SpatialView` + `Entity`/`TransformComponent`（脚手架自带）
-- 计划新增（Task 2 起）：`VideoPlayerComponent` + `CypressMediaPlayer`、`VideoMaterial`/`VideoDimensionMode`、
-  `MeshResource.createVideoPanel`、`AttachmentPanel` 播放 HUD
+- `DefaultWindowContainer` + `Stage` + `SpatialView` + `Entity`/`TransformComponent`
+- `VideoPlayerComponent` + `CypressMediaPlayer`、`VideoMaterial`/`VideoDimensionMode`、
+  `MeshResource.createVideoPanel`——平面视频播放已跑通并截图验证
+- 还没用到：`AttachmentPanel` 播放 HUD（Task 5）、球体/半球网格（Task 6/7）、
+  `StageEnvironmentLightingComponent`（Task 8）
 
 ## 如何构建/安装/运行
 
@@ -84,4 +118,4 @@ pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
 
 ## 下一步
 
-Task 2：`PlaybackState`/`PlaybackManager`（封装 `CypressMediaPlayer`）+ 打包一个测试用平面视频资源。
+Task 5：HUD 播放控制条（`AttachmentPanel`）+ loading/error 门控 + 退出流程（`closeStage`）。

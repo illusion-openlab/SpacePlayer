@@ -22,39 +22,38 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- DefaultStage Configuration -->
+            <!-- Default WindowContainer configuration.
+                 SpacePlayer's default container is a planar main window (library picker),
+                 not a Stage — the immersive Stage("ImmersiveStage") is opened on demand from
+                 PlaceholderMainScreen via LocalSpatialNavigator.openStage(style = StageStyle.Full),
+                 so it needs no static manifest style/immersion configuration here. -->
 
-            <!-- The unique name/id of the Stage -->
+            <!-- The unique name/id of the default WindowContainer. Required — without it the
+                 system cannot bind this Activity's meta-data to the DefaultWindowContainer{}
+                 registered in the DSL and falls back to an internal placeholder container,
+                 which crashes with "Only support [SUIStage,SUIWindowContainer]". -->
             <meta-data
-                android:name="pico.spatial.stage.id"
-                android:value="YourStage" />
+                android:name="pico.spatial.windowcontainer.id"
+                android:value="SpacePlayerMainWindow" />
 
-            <!-- Stage style at launch
-                 "0": StageStyle.Automatic, a system default setting, set to Mixed currently (default)
-                 "1": StageStyle.Mixed — displays both virtual content and the real environment at full intensity (100% each)
-                 "2": StageStyle.Progressive — allows adjusting the balance between virtual and real environments (0–100%)
-                    At 0: immersion = 0,full real environment, no virtual content
-                    At 100: immersion = 100,full virtual content, no real environment
-                 "3": StageStyle.Full — displays only virtual content (100%)
-             -->
+            <!-- windowcontainer.style: "1" = Planar -->
             <meta-data
-                android:name="pico.spatial.stage.style"
+                android:name="pico.spatial.windowcontainer.style"
                 android:value="1" />
 
-            <!-- The immersion of a Progressive Stage at launch, only works when stage style is Progressive, range [0, 100], default value is 50 -->
             <meta-data
-                android:name="pico.spatial.stage.immersion"
-                android:value="100" />
+                android:name="pico.spatial.windowcontainer.defaultsize"
+                android:value="1400x860" />
 
-            <!-- The minimum immersion of a Progressive Stage that the user can adjust to, only works when stage style is Progressive, range [0, 100], default value is 0 -->
+            <!-- resizetype: "2" = ContentMinSize (can grow past the minimum) -->
             <meta-data
-                android:name="pico.spatial.stage.immersion_min"
-                android:value="100" />
+                android:name="pico.spatial.windowcontainer.resizetype"
+                android:value="2" />
 
-            <!-- The maximum immersion of a Progressive Stage that the user can adjust to, only works when stage style is Progressive, range [0, 100], default value is 100 -->
+            <!-- worldscaletype: "2" = Fixed (stays at a fixed real-world scale as distance changes) -->
             <meta-data
-                android:name="pico.spatial.stage.immersion_max"
-                android:value="100" />
+                android:name="pico.spatial.windowcontainer.worldscaletype"
+                android:value="2" />
 
         </activity>
         <meta-data android:name="icon.3d.list" android:resource="@array/icon_3d_list" />

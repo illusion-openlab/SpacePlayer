@@ -1,0 +1,45 @@
+package tech.illusion.spaceplayer.ui
+
+import android.content.Context
+import androidx.compose.runtime.mutableStateOf
+import com.pico.spatial.core.ecs.Entity
+import tech.illusion.spaceplayer.ecs.PlaybackEntityAssembler
+import tech.illusion.spaceplayer.playback.PlaybackManager
+import tech.illusion.spaceplayer.playback.StereoMode
+
+const val SCREEN_WIDTH_METERS = 1.6f
+const val SCREEN_HEIGHT_METERS = 0.9f
+
+class PlaybackViewModel(context: Context) {
+    val manager = PlaybackManager(context)
+    val screenEntity = Entity()
+
+    var isImmersive = mutableStateOf(false)
+        private set
+
+    private var assembled = false
+
+    fun startTestPlayback(assetPath: String, stereoMode: StereoMode) {
+        if (!assembled) {
+            PlaybackEntityAssembler.assembleScreenEntity(
+                screenEntity,
+                manager.player,
+                SCREEN_WIDTH_METERS,
+                SCREEN_HEIGHT_METERS,
+                stereoMode.toVideoDimensionMode(),
+            )
+            assembled = true
+        }
+        manager.setup(assetPath)
+        isImmersive.value = true
+    }
+
+    fun exitImmersive() {
+        manager.pause()
+        isImmersive.value = false
+    }
+
+    fun onCleared() {
+        manager.reset()
+    }
+}
