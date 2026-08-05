@@ -311,7 +311,7 @@ git commit -m "Add PlaybackState/PlaybackManager wrapping CypressMediaPlayer"
 
   `Projection` 在 Stage 1 里只定义、不消费——Stage 1 的手动测试入口是靠调用 `startTestPlayback`/`startSphereTestPlayback`/`startHemisphereTestPlayback` 三个不同方法来区分投影类型的，不是靠一个 `Projection` 参数分支。之所以现在就把它定义出来，是因为设计稿 `VideoItem.projection` 字段（第 2 节）需要它，Stage 2 接入真实文件库时会用它来决定该调用上面三个方法里的哪一个——现在先把类型定好，避免 Stage 2 再回头改 Stage 1 的枚举定义。
 
-- [ ] **Step 1: 写失败的单元测试**
+- [x] **Step 1: 写失败的单元测试**
 
 ```kotlin
 package tech.illusion.spaceplayer.playback
@@ -344,15 +344,16 @@ class StereoModeMappingTest {
 }
 ```
 
-- [ ] **Step 2: 跑测试确认失败（因为 `StereoMode`/`Projection` 还不存在）**
+- [x] **Step 2: 跑测试确认失败（因为 `StereoMode`/`Projection` 还不存在）**
 
 ```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.playback.StereoModeMappingTest"
 ```
 
-预期：FAIL，报 `Unresolved reference: StereoMode`。
+结果：FAIL，`compileDebugUnitTestKotlin` 报 4 处 `Unresolved reference 'StereoMode'`，符合预期。
 
-- [ ] **Step 3: 实现 `Projection.kt` 和 `StereoMode.kt`**
+- [x] **Step 3: 实现 `Projection.kt` 和 `StereoMode.kt`**
 
 ```kotlin
 // Projection.kt
@@ -379,20 +380,16 @@ enum class StereoMode {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 ```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.playback.StereoModeMappingTest"
 ```
 
-预期：4 个测试全部 PASS。
+结果：`BUILD SUCCESSFUL`，4 个测试全部 PASS。
 
-- [ ] **Step 5: 提交**
-
-```bash
-git add app/src/main/java/tech/illusion/spaceplayer/playback/Projection.kt app/src/main/java/tech/illusion/spaceplayer/playback/StereoMode.kt app/src/test/java/tech/illusion/spaceplayer/playback/StereoModeMappingTest.kt
-git commit -m "Add Projection/StereoMode enums with VideoDimensionMode mapping + unit tests"
-```
+- [x] **Step 5: 提交**
 
 ---
 
