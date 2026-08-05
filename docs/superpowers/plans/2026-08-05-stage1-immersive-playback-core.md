@@ -64,23 +64,23 @@ SpacePlayer/
 - Consumes: 无（第一个 Task）
 - Produces: 一个可 `assembleDebug`/`installDebug`/启动的空壳应用，包名 `tech.illusion.spaceplayer`，`DefaultWindowContainer` 显示一个空白/占位画面。后续 Task 在这个骨架上继续。
 
-- [ ] **Step 1: 用 `pico-cli` 在当前工作区里生成项目**
+- [x] **Step 1: 用 `pico-cli` 在当前工作区里生成项目**
 
-在 `/Users/zohar/WorkSpace/Project/PicoProjects/` 下（`SpacePlayer/` 目录已存在，里面只有 `docs/` 和 `.git`）执行：
+实际支持的 flag（`pico-cli project create --help`）：`--dir --name --package --template <planar|volumetric|stage> --sdk --force`。
 
-```bash
-pico-cli project create --help
-```
-
-先看清楚当前版本支持的 `--template`/`--dir`/`--name`/`--package`/`--force` 等选项（不同 CLI 版本参数可能略有出入），再执行（`SpacePlayer` 目录已存在但只有 `docs/`，需要加 `--force` 或等效选项允许在非空目录生成；`--dir` 指向本目录本身而不是建子目录）：
+选了 `--template stage`（而不是空白模板——CLI 没有"完全空白"这个模板选项；`stage` 对应
+"immersive space/spatial interaction from the start"，最贴近本项目核心是沉浸式 Stage 播放这一事实，见
+`spatial-app-onboarding` 技能 template-playbook 第 3 节的路由表）：
 
 ```bash
-pico-cli project create --dir /Users/zohar/WorkSpace/Project/PicoProjects/SpacePlayer --name SpacePlayer --package tech.illusion.spaceplayer
+cd /Users/zohar/WorkSpace/Project/PicoProjects/SpacePlayer
+pico-cli project create --dir . --name SpacePlayer --package tech.illusion.spaceplayer --template stage --force
 ```
 
-若 CLI 询问模板选择，选默认/最基础的空白 Spatial 模板（本项目要从一个干净的 `DefaultWindowContainer` 开始，不需要任何 3D 场景/物理示例模板）。
+生成结果：`Main.kt` 是 `DefaultStage { PicoTheme { HomeStage() } }`，`content/HomeStage.kt` 里有一个加载
+`asset://box.usdz` 的示例实体 + 文字 `AttachmentPanel`。**没有** `DefaultWindowContainer`——这是 Task 4 要自己加的。
 
-- [ ] **Step 2: SpatialUI 自检**
+- [x] **Step 2: SpatialUI 自检**
 
 按 `spatial-app-onboarding` 技能的硬性规则，确认生成的入口 Composable 树用 `PicoTheme { }` 包裹；在 `app/src/main/java` 下搜索：
 
@@ -91,27 +91,37 @@ grep -rn "MaterialTheme" app/src/main/java
 
 两条命令都应无输出。如果生成模板带了 Material 依赖或用法，改成 SpatialUI 等价组件（`com.pico.spatial.ui.design.*`），并从 `app/build.gradle.kts` 里移除 Material 依赖。
 
-- [ ] **Step 3: 构建、安装、启动、截图验证**
+- [x] **Step 3: 构建、安装、启动、截图验证**
+
+实际执行时发现三个本机环境问题（已写进 `AGENTS.md` 的"本机环境注意事项"，此处记录结论）：
+
+1. 系统默认 JDK 25 和 Gradle 8.13 的 Kotlin DSL 解析不兼容，需要 `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"`（Android Studio 自带 JBR 21）再跑 `./gradlew`。
+2. 需要手写 `local.properties`（`sdk.dir=/Users/zohar/Library/Android/sdk`，`spatial.tools.dir=/Users/zohar/Library/PICO/sdk`），这个文件不提交。
+3. 本机连接的真机是 API 34，装不了 `compileSdk 35` 的 APK（`INSTALL_FAILED_OLDER_SDK`），改用 `Pico_Emulator_0_13` 模拟器（API 36）。
 
 ```bash
 cd /Users/zohar/WorkSpace/Project/PicoProjects/SpacePlayer
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew assembleDebug
-pico-cli device list --format json
-pico-cli emulator status --format json
-pico-cli app install app/build/outputs/apk/debug/app-debug.apk
-adb logcat -c
-pico-cli app launch tech.illusion.spaceplayer
-adb logcat -b crash -d
-pico-cli capture screenshot --out ./artifacts/task1-scaffold.png
+pico-cli emulator start --avd Pico_Emulator_0_13 --wait-timeout 180 -y   # 若模拟器未运行
+pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
+adb -s emulator-5554 logcat -c
+pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
+adb -s emulator-5554 logcat -b crash -d
+pico-cli capture screenshot --out ./artifacts/task1-scaffold.png --device emulator-5554
 ```
 
-预期：`assembleDebug` 成功；截图显示一个空白/默认的 `DefaultWindowContainer` 画面；`adb logcat -b crash -d` 无新增崩溃。若没有可用模拟器，先按 `spatial-app-dev-workflow` 里的步骤 `pico-cli emulator start --wait-timeout 180 -y` 拉起一个。
+实际结果：`assembleDebug` 成功；`pico-cli project create --template stage` 生成的默认容器是
+`DefaultStage`（不是空白 `DefaultWindowContainer`——`stage` 模板本来就没有这个选项，模板路由见
+`spatial-app-onboarding` 的 template-playbook），截图显示脚手架自带的 `HomeStage()` 内容：一个盒子模型 +
+"Hello, Spatial SDK!" 文字面板；`adb logcat -b crash -d` 无新增崩溃。把默认容器改造成设计稿要求的
+"平面主窗口 + 非默认 ImmersiveStage" 形状是 Task 4 的工作，不是 Task 1。
 
-- [ ] **Step 4: 写项目级 `AGENTS.md`**
+- [x] **Step 4: 写项目级 `AGENTS.md`**
 
-参考 `/Users/zohar/WorkSpace/Project/PicoProjects/FileSendApp/AGENTS.md` 和 `/Users/zohar/WorkSpace/Project/PicoProjects/SeasonsApp/AGENTS.md` 的风格（"这个项目是什么" + "为什么这么设计" + "关键文件" + "如何构建/安装/运行"），在 `SpacePlayer/AGENTS.md` 里写清楚：这是移植自 Moon Player 的沉浸式视频播放器，设计稿在 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md`，当前处于 Stage 1（沉浸播放核心，无真实文件库），构建/安装/启动命令同 Step 3。
+已写：项目是什么/为什么这么设计/**本机环境注意事项**（JDK 25 不兼容、`local.properties` 内容、真机 API 34 装不了、改用模拟器）/关键文件（含真实 import 路径，比设计文档写作时凭旧版文档猜测的更准）/已用 SDK 能力/构建命令/下一步。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add -A
