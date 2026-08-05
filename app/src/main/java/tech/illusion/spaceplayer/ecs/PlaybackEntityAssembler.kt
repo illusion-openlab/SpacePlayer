@@ -34,4 +34,20 @@ object PlaybackEntityAssembler {
             setPosition(Vector3(0f, 1.5f, -2f))
         }
     }
+
+    fun assembleSphereEntity(
+        entity: Entity,
+        player: CypressMediaPlayer,
+        radiusMeters: Float,
+        dimensionMode: VideoDimensionMode,
+    ) {
+        val mesh = MeshResource.createSphere(radiusMeters)
+        check(mesh.valid) { "createSphere returned an invalid mesh" }
+        // FRONT: cull front faces, render back faces - correct for viewing from inside the
+        // sphere (confirmed by the official "Play spatial video in an app" sample).
+        val material = VideoMaterial(BlendingMode.OPAQUE, dimensionMode, MaterialCullingMode.FRONT)
+        entity.components.set(VideoPlayerComponent(player, mesh, material))
+        // Sphere is centered on the user by design (radiusMeters chosen so the surface surrounds
+        // the default spawn point) - world origin is correct here, unlike the flat screen panel.
+    }
 }

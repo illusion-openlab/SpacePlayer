@@ -950,6 +950,8 @@ fun ImmersiveScene() {
 }
 ```
 
+> **修订说明（Task 6 时发现并改掉）：** 把 loading/HUD 挂成 `screenEntity` 的子实体这个设计，在 Task 6 加入 `sphereEntity` 后暴露了问题——子实体的可见性跟随父实体的 `enabled`，而两种模式下 `screenEntity`/`sphereEntity` 互斥 `enabled`，导致切到 360° 模式时 HUD 会跟着 `screenEntity` 一起被隐藏。Task 6 把 loading/HUD 改成不挂在任何一个视频实体下，直接以 `content.addEntity(this)` 加入 Stage 内容树、用固定的绝对坐标（用户前方 1.5 米），两种模式下都能看到。完整代码见 Task 6 Step 3。
+
 - [x] **Step 5: 构建、安装、启动、截图验证**
 
 `adb shell input tap` 对空间容器不可靠（同 Task 4 的结论），验证 HUD 显示和退出流程都用临时 `LaunchedEffect` 自动触发（验证完已删除，不留在最终代码里）：
@@ -995,44 +997,63 @@ git commit -m "Add playback HUD, loading/error gating, and exit-to-main-window f
       fun assembleSphereEntity(
           entity: Entity,
           player: CypressMediaPlayer,
-          sphereMesh: MeshResource,
+          radiusMeters: Float,
           dimensionMode: VideoDimensionMode,
-      )
+      )  // 内部用 MeshResource.createSphere(radiusMeters) 生成网格，不需要外部传入
   }
   ```
   Task 7（半球）复用同样的参数形状，Task 8（环境层）判断 `Projection == SPHERE_360 || HEMISPHERE_180` 时隐藏 `EnvironmentLayer`。
 
-> **前置说明（重要，先做这个再写代码）：** 360° 球体需要一个"UV 正确映射、朝内表面渲染"的球体网格资源——官方 "Play spatial video in an app" 示例里这个网格**不是**代码里临时生成的，而是在 PICO Spatial Editor 里预先建好、通过 `AssetBundle.loadMeshResource(path)` 加载的（示例里的 `VideoEffectManager.getVideoSphereMesh()` / `VIDEO_SPHERE_MESH_PATH`）。写这份计划时 SDK 文档库暂时无法访问，没能确认 `MeshResource` 是否另外提供了纯代码的球体生成 API（例如 `MeshResource.createSphere(...)`）。**实现这个 Task 前，先用 `spatial-sdk-guideline` 技能或 pico-spatial-knowledge 查一遍当前 SDK 里 `MeshResource`/`com.pico.spatial.core.ecs.resource` 的完整 API：**
-> - 如果确实有纯代码的球体生成函数，直接用它，`assembleSphereEntity` 的 `sphereMesh` 参数改成在方法内部生成，不需要外部传入。
-> - 如果没有，就按官方示例的路子：打开 PICO Spatial Editor，新建一个场景，加一个球体图元（Editor 工具栏的 Add/Mesh 菜单，具体菜单项名称以当前 Editor 版本为准），把球体材质剔除模式设为只渲染内表面（对应代码里的 `MaterialCullingMode.FRONT`，见下），导出为 `.bundle`，放进 `app/src/main/assets/bundles/`，代码里用 `AssetBundle` 加载后传给 `assembleSphereEntity`。
+> **前置说明结论：不需要 Spatial Editor。** 写计划时担心的"球体网格要不要在 Editor 里建"这个问题，实际查了 SDK 6.0 版本的资源管理文档（`spatial-sdk_resource-management_mesh.md`）后发现 `MeshResource` 本来就有一整套程序化几何体生成函数：`createPlane`/`createVideoPanel`/`createSphere(radius)`/`createCylinder`/`createCone`/`createCapsule`/`createBox`/`createTorus`。用 `MeshResource.createSphere(radius = 10f)` 就够了，`./gradlew assembleDebug` 编译通过确认这个 API 在项目实际用的 SDK 0.13.3 里也存在（文档虽然是 6.0 版本的，但接口没变）。官方 "Play spatial video in an app" 示例里用 Editor 导出网格，大概率是那个示例还要做额外的 portal 视觉效果，不是因为程序化 API 不存在。
 
-- [ ] **Step 1: `PlaybackEntityAssembler.kt` 加 `assembleSphereEntity`**
+- [x] **Step 1: `PlaybackEntityAssembler.kt` 加 `assembleSphereEntity`**
 
 ```kotlin
 fun assembleSphereEntity(
     entity: Entity,
     player: CypressMediaPlayer,
-    sphereMesh: MeshResource,
+    radiusMeters: Float,
     dimensionMode: VideoDimensionMode,
 ) {
-    check(sphereMesh.valid) { "sphere mesh resource is invalid" }
+    val mesh = MeshResource.createSphere(radiusMeters)
+    check(mesh.valid) { "createSphere returned an invalid mesh" }
+    // FRONT: cull front faces, render back faces - correct for viewing from inside the
+    // sphere (confirmed by the official "Play spatial video in an app" sample).
     val material = VideoMaterial(BlendingMode.OPAQUE, dimensionMode, MaterialCullingMode.FRONT)
-    entity.components.set(VideoPlayerComponent(player, sphereMesh, material))
+    entity.components.set(VideoPlayerComponent(player, mesh, material))
+    // Sphere is centered on the user by design (radiusMeters chosen so the surface surrounds
+    // the default spawn point) - world origin is correct here, unlike the flat screen panel.
 }
 ```
 
-`MaterialCullingMode.FRONT`（剔除正面、渲染背面）已由官方示例确认，是"从球体内部往外看"场景的正确设置，直接复用，不需要重新验证。
+不需要外部传入 `MeshResource`——直接在方法内部用 `createSphere` 生成，比计划撰写时设想的"外部传入网格资源"签名更简单。
 
-- [ ] **Step 2: `PlaybackViewModel.kt`——加 `sphereEntity` 和 360° 测试入口**
+- [x] **Step 2: `PlaybackViewModel.kt`——加 `sphereEntity` 和 360° 测试入口**
 
 ```kotlin
+const val SPHERE_RADIUS_METERS = 10f
+
 val sphereEntity = Entity()
 private var sphereAssembled = false
 
-fun startSphereTestPlayback(assetPath: String, stereoMode: StereoMode, sphereMesh: MeshResource) {
+fun startTestPlayback(assetPath: String, stereoMode: StereoMode) {
+    if (!screenAssembled) {
+        PlaybackEntityAssembler.assembleScreenEntity(
+            screenEntity, manager.player, SCREEN_WIDTH_METERS, SCREEN_HEIGHT_METERS,
+            stereoMode.toVideoDimensionMode(),
+        )
+        screenAssembled = true
+    }
+    screenEntity.enabled = true
+    sphereEntity.enabled = false
+    manager.setup(assetPath)
+    isImmersive.value = true
+}
+
+fun startSphereTestPlayback(assetPath: String, stereoMode: StereoMode) {
     if (!sphereAssembled) {
         PlaybackEntityAssembler.assembleSphereEntity(
-            sphereEntity, manager.player, sphereMesh, stereoMode.toVideoDimensionMode(),
+            sphereEntity, manager.player, SPHERE_RADIUS_METERS, stereoMode.toVideoDimensionMode(),
         )
         sphereAssembled = true
     }
@@ -1043,41 +1064,120 @@ fun startSphereTestPlayback(assetPath: String, stereoMode: StereoMode, sphereMes
 }
 ```
 
-平面播放路径（`startTestPlayback`）对应加一行 `sphereEntity.enabled = false; screenEntity.enabled = true`，保证两者互斥。
+（`assembled` 布尔字段改名成 `screenAssembled`，和新加的 `sphereAssembled` 对称——Task 4 原来的名字在只有一个视频实体时没问题，两个实体并存后 `assembled` 这个名字指代不清，顺手改了。）
 
-- [ ] **Step 3: `ImmersiveScene.kt`——把 `sphereEntity` 也加进 Stage 内容树**
+- [x] **Step 3: `ImmersiveScene.kt`——加入 `sphereEntity`，并把 loading/HUD 从 `screenEntity` 的子实体改成独立实体**
 
-和 Task 4 Step 4 里加 `screenEntity` 一样的方式，把 `viewModel.sphereEntity` 也 `addEntity`。
-
-- [ ] **Step 4: `PlaceholderMainScreen.kt`——加 360° 测试按钮**
+把 `viewModel.sphereEntity` 也 `content.addEntity(...)`。同时做了一处计划撰写时没预料到的修订：loading/HUD 原来是 `screenEntity` 的子实体（Task 5 的写法），但子实体的可见性跟随父实体 `enabled`，而 `screenEntity`/`sphereEntity` 现在互斥 `enabled`——如果不改，切到 360° 模式时 HUD 会跟着 `screenEntity` 一起消失。改成不挂在任何一个视频实体下，用固定绝对坐标（用户前方 1.5 米）：
 
 ```kotlin
-Button(onClick = {
-    viewModel.startSphereTestPlayback("videos/sample_360_test.mp4", StereoMode.MONO, sphereMeshResource)
-    coroutineScope.launch {
-        LocalSpatialNavigator.current.openStage(IMMERSIVE_STAGE_ID, style = StageStyle.Full)
+package tech.illusion.spaceplayer.ui
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import com.pico.spatial.core.ecs.TransformComponent
+import com.pico.spatial.core.math.Vector3
+import com.pico.spatial.ui.design.PicoTheme
+import com.pico.spatial.ui.foundation.content.SpatialView
+import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
+import kotlinx.coroutines.launch
+import org.koin.core.context.GlobalContext
+import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
+
+private const val LOADING_ATTACHMENT_ID = "loading"
+private const val HUD_ATTACHMENT_ID = "hud"
+
+@Composable
+fun ImmersiveScene() {
+    val scope = GlobalContext.get().getScope(PLAYBACK_SESSION_SCOPE_ID)
+    val viewModel: PlaybackViewModel = scope.get()
+    val navigator = LocalSpatialNavigator.current
+    val coroutineScope = rememberCoroutineScope()
+
+    PicoTheme {
+        SpatialView(
+            attachments = {
+                AttachmentPanel(id = LOADING_ATTACHMENT_ID) {
+                    LoadingErrorAttachment(viewModel.manager.state)
+                }
+                AttachmentPanel(id = HUD_ATTACHMENT_ID) {
+                    PlaybackHud(
+                        state = viewModel.manager.state,
+                        onPlayPause = { viewModel.togglePlayPause() },
+                        onExit = {
+                            viewModel.exitImmersive()
+                            coroutineScope.launch { navigator.closeStage() }
+                        },
+                    )
+                }
+            },
+            initial = { content, attachments ->
+                content.addEntity(viewModel.screenEntity)
+                content.addEntity(viewModel.sphereEntity)
+
+                // Independent of screenEntity/sphereEntity on purpose: screenEntity sits 2m away
+                // and sphereEntity is a 10m-radius shell, and only one of the two is `enabled` at
+                // a time (children of a disabled entity are hidden too) - so the HUD/loading
+                // overlay must NOT be parented to either, or it would disappear in sphere mode.
+                // Fixed in front of the default spawn point works for both.
+                attachments.entity(LOADING_ATTACHMENT_ID)?.apply {
+                    components[TransformComponent::class.java]?.apply {
+                        setPosition(Vector3(0f, 1.5f, -1.5f))
+                    }
+                    content.addEntity(this)
+                }
+
+                attachments.entity(HUD_ATTACHMENT_ID)?.apply {
+                    components[TransformComponent::class.java]?.apply {
+                        setPosition(Vector3(0f, 0.9f, -1.5f))
+                    }
+                    content.addEntity(this)
+                }
+            },
+            update = { _, attachments ->
+                attachments.entity(LOADING_ATTACHMENT_ID)?.enabled = viewModel.showLoadingOverlay
+                attachments.entity(HUD_ATTACHMENT_ID)?.enabled = !viewModel.showLoadingOverlay
+            },
+        )
     }
-}) {
-    Text("播放测试视频（360°）")
 }
 ```
 
-（`sphereMeshResource` 的来源取决于 Step 1 前置说明里查到的结论：程序化生成就直接调用，Editor 导出就在这里同步/异步加载 `AssetBundle`。）
+- [x] **Step 4: `PlaceholderMainScreen.kt`——加 360° 测试按钮**
 
-- [ ] **Step 5: 构建、安装、启动、截图验证**
-
-```bash
-./gradlew assembleDebug
-pico-cli app install app/build/outputs/apk/debug/app-debug.apk
-adb logcat -c
-pico-cli app launch tech.illusion.spaceplayer
-pico-cli capture screenshot --out ./artifacts/task6-sphere-playing.png
-adb logcat -b crash -d
+```kotlin
+Button(onClick = {
+    viewModel.startSphereTestPlayback("videos/sample_360_test.mp4", StereoMode.MONO)
+    coroutineScope.launch {
+        navigator.openStage(IMMERSIVE_STAGE_ID, style = StageStyle.Full)
+    }
+}) {
+    Text(
+        text = "播放测试视频（360°）",
+        color = PicoTheme.colorScheme.labelPrimary,
+        style = PicoTheme.typography.titleLarge.copy(fontSize = 32.sp),
+        textAlign = TextAlign.Center,
+    )
+}
 ```
 
-预期：截图显示视频铺满整个视野（球体内表面），没有可见的接缝/黑洞；无新增崩溃。
+- [x] **Step 5: 构建、安装、启动、截图验证**
 
-- [ ] **Step 6: 提交**
+```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+./gradlew assembleDebug
+pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
+adb -s emulator-5554 logcat -c
+pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
+sleep 11
+pico-cli capture screenshot --out ./artifacts/task6-sphere.png --device emulator-5554
+```
+
+（验证用临时 `LaunchedEffect` 自动触发 `startSphereTestPlayback`，同 Task 4/5 的做法，验证完已删除。）
+
+结果：截图显示测试视频（`testsrc2` 彩条）完整铺满整个视野，没有接缝/黑洞；主窗口面板和 HUD 正确悬浮在前方、不受球体内容影响（这正是 Step 3 那处修订要验证的点）；`adb logcat -b crash -d` 无崩溃。
+
+- [x] **Step 6: 提交**
 
 ```bash
 git add -A

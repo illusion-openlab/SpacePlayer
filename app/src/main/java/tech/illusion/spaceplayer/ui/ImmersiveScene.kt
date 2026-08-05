@@ -40,19 +40,25 @@ fun ImmersiveScene() {
             },
             initial = { content, attachments ->
                 content.addEntity(viewModel.screenEntity)
+                content.addEntity(viewModel.sphereEntity)
 
+                // Independent of screenEntity/sphereEntity on purpose: screenEntity sits 2m away
+                // and sphereEntity is a 10m-radius shell, and only one of the two is `enabled` at
+                // a time (children of a disabled entity are hidden too) - so the HUD/loading
+                // overlay must NOT be parented to either, or it would disappear in sphere mode.
+                // Fixed in front of the default spawn point works for both.
                 attachments.entity(LOADING_ATTACHMENT_ID)?.apply {
                     components[TransformComponent::class.java]?.apply {
-                        setPosition(Vector3(0f, 0f, 0.05f))
+                        setPosition(Vector3(0f, 1.5f, -1.5f))
                     }
-                    viewModel.screenEntity.addChild(this)
+                    content.addEntity(this)
                 }
 
                 attachments.entity(HUD_ATTACHMENT_ID)?.apply {
                     components[TransformComponent::class.java]?.apply {
-                        setPosition(Vector3(0f, -0.55f, 0.05f))
+                        setPosition(Vector3(0f, 0.9f, -1.5f))
                     }
-                    viewModel.screenEntity.addChild(this)
+                    content.addEntity(this)
                 }
             },
             update = { _, attachments ->

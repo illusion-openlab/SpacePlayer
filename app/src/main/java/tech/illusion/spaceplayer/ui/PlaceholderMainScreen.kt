@@ -47,6 +47,19 @@ fun PlaceholderMainScreen() {
                     textAlign = TextAlign.Center,
                 )
             }
+            Button(onClick = {
+                viewModel.startSphereTestPlayback("videos/sample_360_test.mp4", StereoMode.MONO)
+                coroutineScope.launch {
+                    navigator.openStage(IMMERSIVE_STAGE_ID, style = StageStyle.Full)
+                }
+            }) {
+                Text(
+                    text = "播放测试视频（360°）",
+                    color = PicoTheme.colorScheme.labelPrimary,
+                    style = PicoTheme.typography.titleLarge.copy(fontSize = 32.sp),
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }

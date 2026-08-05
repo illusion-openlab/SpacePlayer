@@ -10,18 +10,21 @@ import tech.illusion.spaceplayer.playback.StereoMode
 
 const val SCREEN_WIDTH_METERS = 1.6f
 const val SCREEN_HEIGHT_METERS = 0.9f
+const val SPHERE_RADIUS_METERS = 10f
 
 class PlaybackViewModel(context: Context) {
     val manager = PlaybackManager(context)
     val screenEntity = Entity()
+    val sphereEntity = Entity()
 
     var isImmersive = mutableStateOf(false)
         private set
 
-    private var assembled = false
+    private var screenAssembled = false
+    private var sphereAssembled = false
 
     fun startTestPlayback(assetPath: String, stereoMode: StereoMode) {
-        if (!assembled) {
+        if (!screenAssembled) {
             PlaybackEntityAssembler.assembleScreenEntity(
                 screenEntity,
                 manager.player,
@@ -29,8 +32,26 @@ class PlaybackViewModel(context: Context) {
                 SCREEN_HEIGHT_METERS,
                 stereoMode.toVideoDimensionMode(),
             )
-            assembled = true
+            screenAssembled = true
         }
+        screenEntity.enabled = true
+        sphereEntity.enabled = false
+        manager.setup(assetPath)
+        isImmersive.value = true
+    }
+
+    fun startSphereTestPlayback(assetPath: String, stereoMode: StereoMode) {
+        if (!sphereAssembled) {
+            PlaybackEntityAssembler.assembleSphereEntity(
+                sphereEntity,
+                manager.player,
+                SPHERE_RADIUS_METERS,
+                stereoMode.toVideoDimensionMode(),
+            )
+            sphereAssembled = true
+        }
+        screenEntity.enabled = false
+        sphereEntity.enabled = true
         manager.setup(assetPath)
         isImmersive.value = true
     }
