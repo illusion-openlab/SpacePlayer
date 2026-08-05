@@ -6,14 +6,15 @@
 visionOS 应用 [Moon Player](https://moonvrplayer.com/zh/moon-player-apple-vision-pro)。完整产品规划见
 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md`。
 
-当前处于 **Stage 1（项目骨架 + 沉浸播放核心），Task 1-4 已完成并验证**，计划见
+当前处于 **Stage 1（项目骨架 + 沉浸播放核心），Task 1-5 已完成并验证**，计划见
 `docs/superpowers/plans/2026-08-05-stage1-immersive-playback-core.md`。Stage 1 只用硬编码测试视频跑通
 "平面 → 环境化平面（电影院/星空/海景，可实时切换）→ 180°半球 → 360°球体" 这条播放链路，不含真实文件库 UI
 （Stage 2）、不含字幕（Stage 3）。
 
-Task 4 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合成的彩条测试图案）已经能在
+Task 4/5 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合成的彩条测试图案）能在
 `Stage("ImmersiveStage")` 里通过 `VideoPlayerComponent` + `CypressMediaPlayer` 正确渲染播放（模拟器截图确认，
-时间码/帧计数器清晰可见）。
+时间码/帧计数器清晰可见）；银幕下方的 HUD 播放控制条（播放/暂停/退出）正确显示，loading 层在首帧渲染后正确隐藏，
+点退出能正常 `closeStage()` 回到主窗口，全程无崩溃。
 
 ## 为什么这么设计
 
@@ -93,6 +94,10 @@ Task 4 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合�
 - `ui/PlaybackViewModel.kt` — Koin scoped 的共享状态（`screenEntity`、`manager`、`startTestPlayback`）。
 - `di/PlaybackModule.kt` — Koin session scope，让 `DefaultWindowContainer` 和 `Stage` 两棵独立 Compose 树共享同一个
   `PlaybackViewModel`/`CypressMediaPlayer` 实例。
+- `ui/PlaybackHud.kt`、`ui/LoadingErrorAttachment.kt` — HUD 播放控制条（播放/暂停/退出）和 loading/error 覆盖层，
+  都是 `AttachmentPanel` 挂载在 `screenEntity` 下的子实体（`addChild`），跟着银幕一起动。
+- `ui/ImmersiveScene.kt` — `SpatialView(attachments = {...}, initial = {...}, update = {...})`：`update` 块里
+  用 `PlaybackViewModel.showLoadingOverlay` 互斥控制 loading/HUD 两个 attachment 的 `enabled`。
 - `app/build.gradle.kts` / `gradle/libs.versions.toml` — `spatialBom = "0.13.3"`，`compileSdk/minSdk/targetSdk
   = 35`，加了 `koin-android:3.5.6`，无 Material/Material3 依赖（SpatialUI-only 自检通过）。
 
@@ -101,8 +106,8 @@ Task 4 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合�
 - `DefaultWindowContainer` + `Stage` + `SpatialView` + `Entity`/`TransformComponent`
 - `VideoPlayerComponent` + `CypressMediaPlayer`、`VideoMaterial`/`VideoDimensionMode`、
   `MeshResource.createVideoPanel`——平面视频播放已跑通并截图验证
-- 还没用到：`AttachmentPanel` 播放 HUD（Task 5）、球体/半球网格（Task 6/7）、
-  `StageEnvironmentLightingComponent`（Task 8）
+- `AttachmentPanel`（HUD + loading/error）+ `closeStage()` 退出流程——已跑通并截图验证
+- 还没用到：球体/半球网格（Task 6/7）、`StageEnvironmentLightingComponent`（Task 8）
 
 ## 如何构建/安装/运行
 
@@ -118,4 +123,6 @@ pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
 
 ## 下一步
 
-Task 5：HUD 播放控制条（`AttachmentPanel`）+ loading/error 门控 + 退出流程（`closeStage`）。
+Task 6：360° 球体播放 + MV-HEVC/SBS/TB 立体参数化。**先查清楚**：`MeshResource` 有没有程序化生成球体的 API——
+没有的话要在 PICO Spatial Editor 里建一个 UV 正确、朝内表面渲染的球体网格，导出为 `.bundle`（见计划 Task 6 的
+前置说明）。

@@ -756,61 +756,91 @@ git commit -m "Play flat test video inside a shared ImmersiveStage via VideoPlay
 - Consumes: `PlaybackManager.state`/`duration`/`hasFirstFrameRendered`（Task 2）、`PlaybackViewModel.exitImmersive()`（Task 4）、SDK 的 `SpatialView(attachments = { AttachmentPanel(id) { ... } }, initial = { content, attachments -> ... }, update = { _, attachments -> ... })`
 - Produces: `PlaybackViewModel` 新增 `fun togglePlayPause()`、`fun seekTo(ms: Long)`、`fun setVolume(v: Float)`——Task 6/7/8 不需要再碰这几个方法，只是复用。
 
-- [ ] **Step 1: `LoadingErrorAttachment.kt`**
+- [x] **Step 1: `LoadingErrorAttachment.kt`**
+
+真实包名：frosted-glass 背景要用 `com.pico.spatial.ui.foundation.material.backgroundMaterial` + `com.pico.spatial.ui.platform.Material`（和 `Text` 一样，`style`/`fontSize` 必须显式给，理由同 Task 4 Step 6）：
 
 ```kotlin
 package tech.illusion.spaceplayer.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
+import com.pico.spatial.ui.foundation.material.backgroundMaterial
+import com.pico.spatial.ui.platform.Material
 import tech.illusion.spaceplayer.playback.PlaybackState
 
 @Composable
 fun LoadingErrorAttachment(state: PlaybackState) {
     PicoTheme {
-        Text(
-            when (state) {
-                PlaybackState.PREPARING -> "加载中…"
-                PlaybackState.ERROR -> "视频加载失败"
-                else -> "加载中…"
-            }
-        )
+        Box(
+            modifier = Modifier
+                .size(480.dp, 200.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .backgroundMaterial(true, Material.Regular),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = when (state) {
+                    PlaybackState.ERROR -> "视频加载失败"
+                    else -> "加载中…"
+                },
+                color = PicoTheme.colorScheme.labelPrimary,
+                style = PicoTheme.typography.titleLarge.copy(fontSize = 32.sp),
+            )
+        }
     }
 }
 ```
 
-- [ ] **Step 2: `PlaybackViewModel.kt` 加播放控制方法**
+- [x] **Step 2: `PlaybackViewModel.kt` 加播放控制方法**
+
+（没加 `seekTo`/`setVolume` 转发——Stage 1 的 HUD 只做播放/暂停/退出三个最小控制，进度条/音量滑杆是 Stage 2 详情页的范围，`PlaybackManager.seekTo`/`setVolume` 已经存在，届时直接调用，不需要现在就在 ViewModel 加一层转发。）
 
 ```kotlin
 fun togglePlayPause() {
     when (manager.state) {
-        tech.illusion.spaceplayer.playback.PlaybackState.PLAYING -> manager.pause()
-        tech.illusion.spaceplayer.playback.PlaybackState.PAUSED,
-        tech.illusion.spaceplayer.playback.PlaybackState.READY -> manager.resume()
+        PlaybackState.PLAYING -> manager.pause()
+        PlaybackState.PAUSED, PlaybackState.READY -> manager.resume()
         else -> {}
     }
 }
 
-fun seekTo(ms: Long) = manager.seekTo(ms)
-fun setVolume(volume: Float) = manager.setVolume(volume)
-
 val showLoadingOverlay: Boolean
-    get() = manager.state == tech.illusion.spaceplayer.playback.PlaybackState.PREPARING ||
-        manager.state == tech.illusion.spaceplayer.playback.PlaybackState.ERROR ||
-        (manager.state == tech.illusion.spaceplayer.playback.PlaybackState.PLAYING && !manager.hasFirstFrameRendered)
+    get() = manager.state == PlaybackState.PREPARING ||
+        manager.state == PlaybackState.ERROR ||
+        (manager.state == PlaybackState.PLAYING && !manager.hasFirstFrameRendered)
 ```
 
-- [ ] **Step 3: `PlaybackHud.kt`**
+（顶部 import 加 `tech.illusion.spaceplayer.playback.PlaybackState`。）
+
+- [x] **Step 3: `PlaybackHud.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pico.spatial.ui.design.Button
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
+import com.pico.spatial.ui.foundation.material.backgroundMaterial
+import com.pico.spatial.ui.platform.Material
 import tech.illusion.spaceplayer.playback.PlaybackState
 
 @Composable
@@ -820,40 +850,125 @@ fun PlaybackHud(
     onExit: () -> Unit,
 ) {
     PicoTheme {
-        Row {
-            Button(onClick = onPlayPause) {
-                Text(if (state == PlaybackState.PLAYING) "暂停" else "播放")
-            }
-            Button(onClick = onExit) {
-                Text("退出")
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .backgroundMaterial(true, Material.Regular)
+                .padding(16.dp),
+        ) {
+            Row {
+                Button(onClick = onPlayPause) {
+                    Text(
+                        text = if (state == PlaybackState.PLAYING) "暂停" else "播放",
+                        color = PicoTheme.colorScheme.labelPrimary,
+                        style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
+                    )
+                }
+                Button(onClick = onExit) {
+                    Text(
+                        text = "退出",
+                        color = PicoTheme.colorScheme.labelPrimary,
+                        style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
+                    )
+                }
             }
         }
     }
 }
 ```
 
-（进度条/音量滑杆用 SpatialUI 的 `Slider`/等价组件补上，具体组件名参照 `spatial-ui-design-style` 技能里当前推荐的滑杆组件——Stage 1 先保证播放/暂停/退出这三个最小可用的控制，进度拖拽和音量在 Stage 2 补齐详情页时可以一并加，不阻塞本 Task 的验证目标。）
+（进度条/音量滑杆留给 Stage 2——理由同 Step 2。）
 
-- [ ] **Step 4: `ImmersiveScene.kt`——挂载 HUD 和 loading Attachment，接入退出**
+- [x] **Step 4: `ImmersiveScene.kt`——挂载 HUD 和 loading Attachment，接入退出**
 
-用官方示例 `spatial-sdk_video_sample-play-spatial-video-in-an-app.md` "Step 7: Loading/error overlay: AttachmentPanel" 里验证过的 `SpatialView(attachments = {...}, initial = {...}, update = {...})` 写法，把 `LoadingErrorAttachment` 和 `PlaybackHud` 分别挂载为两个 `AttachmentPanel`，`update` 块里：loading 面板的 `enabled` 绑定 `viewModel.showLoadingOverlay`；HUD 面板的 `enabled` 绑定 `!viewModel.showLoadingOverlay`。HUD 的退出按钮调用 `viewModel.exitImmersive()`，同时用 `rememberCoroutineScope` 调 `LocalSpatialNavigator.current.closeStage()` 关闭 `ImmersiveStage` 回到主窗口。
+`SpatialView(attachments = {...}, initial = {...}, update = {...})` 的写法和官方示例一致，`AttachmentPanel` 不需要单独 import（`attachments` lambda 作用域自带）。两个 attachment 都作为 `screenEntity` 的子实体（`addChild`），这样 dock 到某个位置时会跟着银幕一起动：
 
-- [ ] **Step 5: 构建、安装、启动、截图验证**
+```kotlin
+package tech.illusion.spaceplayer.ui
 
-```bash
-./gradlew assembleDebug
-pico-cli app install app/build/outputs/apk/debug/app-debug.apk
-adb logcat -c
-pico-cli app launch tech.illusion.spaceplayer
-pico-cli capture screenshot --out ./artifacts/task5-loading.png
-# 等待首帧渲染后再截一张
-pico-cli capture screenshot --out ./artifacts/task5-hud.png
-adb logcat -b crash -d
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import com.pico.spatial.core.ecs.TransformComponent
+import com.pico.spatial.core.math.Vector3
+import com.pico.spatial.ui.design.PicoTheme
+import com.pico.spatial.ui.foundation.content.SpatialView
+import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
+import kotlinx.coroutines.launch
+import org.koin.core.context.GlobalContext
+import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
+
+private const val LOADING_ATTACHMENT_ID = "loading"
+private const val HUD_ATTACHMENT_ID = "hud"
+
+@Composable
+fun ImmersiveScene() {
+    val scope = GlobalContext.get().getScope(PLAYBACK_SESSION_SCOPE_ID)
+    val viewModel: PlaybackViewModel = scope.get()
+    val navigator = LocalSpatialNavigator.current
+    val coroutineScope = rememberCoroutineScope()
+
+    PicoTheme {
+        SpatialView(
+            attachments = {
+                AttachmentPanel(id = LOADING_ATTACHMENT_ID) {
+                    LoadingErrorAttachment(viewModel.manager.state)
+                }
+                AttachmentPanel(id = HUD_ATTACHMENT_ID) {
+                    PlaybackHud(
+                        state = viewModel.manager.state,
+                        onPlayPause = { viewModel.togglePlayPause() },
+                        onExit = {
+                            viewModel.exitImmersive()
+                            coroutineScope.launch { navigator.closeStage() }
+                        },
+                    )
+                }
+            },
+            initial = { content, attachments ->
+                content.addEntity(viewModel.screenEntity)
+
+                attachments.entity(LOADING_ATTACHMENT_ID)?.apply {
+                    components[TransformComponent::class.java]?.apply {
+                        setPosition(Vector3(0f, 0f, 0.05f))
+                    }
+                    viewModel.screenEntity.addChild(this)
+                }
+
+                attachments.entity(HUD_ATTACHMENT_ID)?.apply {
+                    components[TransformComponent::class.java]?.apply {
+                        setPosition(Vector3(0f, -0.55f, 0.05f))
+                    }
+                    viewModel.screenEntity.addChild(this)
+                }
+            },
+            update = { _, attachments ->
+                attachments.entity(LOADING_ATTACHMENT_ID)?.enabled = viewModel.showLoadingOverlay
+                attachments.entity(HUD_ATTACHMENT_ID)?.enabled = !viewModel.showLoadingOverlay
+            },
+        )
+    }
+}
 ```
 
-预期：第一张截图能看到 loading 提示，第二张能看到播放/暂停/退出控制条；点击退出后应用回到 `PlaceholderMainScreen`；无新增崩溃。
+- [x] **Step 5: 构建、安装、启动、截图验证**
 
-- [ ] **Step 6: 提交**
+`adb shell input tap` 对空间容器不可靠（同 Task 4 的结论），验证 HUD 显示和退出流程都用临时 `LaunchedEffect` 自动触发（验证完已删除，不留在最终代码里）：
+
+```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+./gradlew assembleDebug
+pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
+adb -s emulator-5554 logcat -c
+pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
+sleep 10
+pico-cli capture screenshot --out ./artifacts/task5-hud.png --device emulator-5554
+```
+
+结果：截图能看到测试视频正常播放，银幕下方出现 HUD 控制条，放大确认文字是"暂停"/"退出"（播放中，loading 层正确隐藏）；`adb logcat -b crash -d` 无崩溃。
+
+退出流程单独验证：在 `ImmersiveScene` 临时加 `LaunchedEffect(Unit) { delay(6000); viewModel.exitImmersive(); navigator.closeStage() }`，`sleep 16` 后截图——画面回到主窗口（标题+按钮），黑色沉浸背景和 HUD 都消失，无崩溃。确认后移除了这段临时代码。
+
+- [x] **Step 6: 提交**
 
 ```bash
 git add -A

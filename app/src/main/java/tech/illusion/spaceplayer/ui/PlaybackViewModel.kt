@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import com.pico.spatial.core.ecs.Entity
 import tech.illusion.spaceplayer.ecs.PlaybackEntityAssembler
 import tech.illusion.spaceplayer.playback.PlaybackManager
+import tech.illusion.spaceplayer.playback.PlaybackState
 import tech.illusion.spaceplayer.playback.StereoMode
 
 const val SCREEN_WIDTH_METERS = 1.6f
@@ -38,6 +39,19 @@ class PlaybackViewModel(context: Context) {
         manager.pause()
         isImmersive.value = false
     }
+
+    fun togglePlayPause() {
+        when (manager.state) {
+            PlaybackState.PLAYING -> manager.pause()
+            PlaybackState.PAUSED, PlaybackState.READY -> manager.resume()
+            else -> {}
+        }
+    }
+
+    val showLoadingOverlay: Boolean
+        get() = manager.state == PlaybackState.PREPARING ||
+            manager.state == PlaybackState.ERROR ||
+            (manager.state == PlaybackState.PLAYING && !manager.hasFirstFrameRendered)
 
     fun onCleared() {
         manager.reset()
