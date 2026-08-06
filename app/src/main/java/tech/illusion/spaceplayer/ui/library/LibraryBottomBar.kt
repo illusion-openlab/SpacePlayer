@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,7 +30,10 @@ fun LibraryBottomBar(
     onSelectEnvironment: (Environment) -> Unit,
     onStartPlayback: () -> Unit,
 ) {
-    Row(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (selectedItem?.projection == Projection.FLAT) {
             val envChipColors = ChipsDefaults.toggleableChipColors(
                 contentColor = SpacePlayerTextPrimary,

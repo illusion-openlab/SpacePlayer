@@ -1,5 +1,6 @@
 package tech.illusion.spaceplayer.ui.library
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -8,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -80,7 +82,11 @@ fun FormatCorrectionPopup(
                     )
                 }
             }
-            Row(modifier = Modifier.padding(top = 12.dp)) {
+            Row(
+                modifier = Modifier.padding(top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text(
                     text = if (hasSubtitle) "字幕：已设置" else "字幕：未设置",
                     color = PicoTheme.colorScheme.labelSecondary,
@@ -94,7 +100,11 @@ fun FormatCorrectionPopup(
                 }
             }
 
-            Row(modifier = Modifier.padding(top = 12.dp)) {
+            Row(
+                modifier = Modifier.padding(top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Button(onClick = onDismissRequest) {
                     Text(text = "取消", style = PicoTheme.typography.bodyLarge.copy(fontSize = 16.sp))
                 }

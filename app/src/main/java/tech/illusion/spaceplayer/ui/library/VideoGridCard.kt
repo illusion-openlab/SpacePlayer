@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -46,6 +47,10 @@ import tech.illusion.spaceplayer.playback.Projection
 import tech.illusion.spaceplayer.playback.StereoMode
 
 private const val THUMBNAIL_SIZE_PX = 480
+
+// Reserves enough height for title + metadata + the optional "修正格式" line so cards in the same
+// grid row line up evenly regardless of whether a given item shows that third line.
+private val INFO_BLOCK_MIN_HEIGHT = 96.dp
 
 private fun Projection.label(): String = when (this) {
     Projection.FLAT -> "平面"
@@ -191,7 +196,7 @@ fun VideoGridCard(
             }
         }
 
-        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().heightIn(min = INFO_BLOCK_MIN_HEIGHT).padding(12.dp)) {
             Text(
                 text = item.displayName,
                 color = SpacePlayerTextPrimary,

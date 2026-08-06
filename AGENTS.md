@@ -118,6 +118,30 @@ teal/purple 徽标）；因为窗口根节点本来就是固定色覆盖系统�
 发一版真机截图再等反馈"来回快得多，且效果图和真实渲染两种媒介对普通人判断"要不要更暖/更亮/更白"这类问题来说
 都有各自不可替代的作用（效果图快、真实渲染准）。
 
+**对齐修复 + "视图被缩小"排查（2026-08-06）**：用户反馈"整体布局不太规整，部分元素没有对齐"+"整个视图貌似被缩小了，
+现在连字都看不清"。逐个排查：
+
+1. **对齐 bug 是真的，已修复**：`MainLibraryScreen.kt`/`LibraryBottomBar.kt`/`FormatCorrectionPopup.kt` 里有
+   好几处 `Row { ... }` 混装了高度明显不同的子项（Icon+Text、标题 Text+筛选 Chip、环境 Chip+"开始播放"
+   Button、字幕状态 Text+Button），但没有显式设 `verticalAlignment = Alignment.CenterVertically`——Compose
+   Row 默认按顶部对齐，导致这些子项看起来一高一低。全部补上了。另外网格卡片之间的间距原来是每张卡片自己
+   `Modifier.padding(8.dp)`，导致卡片之间的间隙是 8+8=16dp，但卡片到容器边缘只有 8dp，两侧不对称——改成
+   `LazyVerticalGrid` 自带的 `contentPadding` + `Arrangement.spacedBy(16.dp)`，四周间距统一。还发现网格同一行里
+   如果一张卡片显示"修正格式"提示行、另一张不显示（`formatSource != DEFAULT`），两张卡片底部会不齐——给
+   `VideoGridCard` 的文字信息块加了 `heightIn(min = 96.dp)`，同一行卡片高度统一。
+2. **"视图被缩小/字看不清"——排查后没找到代码层面的回归，如实记录**：对比了今天视觉重做三个版本（深色主题→暖色→
+   最终番茄红）的 `adb shell uiautomator dump` 边界坐标，卡片和面板的像素尺寸**完全一致**，没有变化；又 diff 了
+   这次重做前后的 `AndroidManifest.xml`/`Main.kt`，`windowConstraints`/`defaultsize`/`worldscaletype` 这些跟
+   窗口真实尺寸相关的设置**全部没有改动**；字体大小（`fontSize`）跟重做前的 `VideoListCard.kt`/
+   `MainLibraryScreen.kt` 逐项比对，除了卡片标题从 18sp 改成 16sp 以外**基本没变**。目前的结论：这次没有找到
+   任何我改动的代码导致窗口或字体实际变小的证据。倒是在拍一张**完整未裁剪**的截图时发现，面板本身在模拟器
+   房间场景里只占画面很小一块（悬浮在床头墙上，离"摄像机"位置较远/较小）——如果这就是用户看到"字看不清"的
+   原因，那是这个窗口在 3D 场景里的**摆放位置/距离**导致的，跟这次改的 Compose 布局代码本身无关。**没有去猜测
+   或者硬修一个不确定存在的问题**——如果用户是真机上看到的，需要用户确认具体是"离远了看不清"还是"字本身变
+   小了"，才能判断下一步要不要动窗口摆放逻辑；如果反馈来自我发的对比截图，那是因为这几张图裁剪缩放比例
+   前后不一致（`final_tomato_crop.png` 那批用的裁剪框比之前 `warm_02_crop.png` 那批宽很多、缩放倍数更低），
+   不是应用本身的问题。
+
 ## 为什么这么设计
 
 - 单一 `DefaultWindowContainer`（占位主窗口，选测试用例用）+ 单一共享 `Stage(id = "ImmersiveStage")`：见设计稿

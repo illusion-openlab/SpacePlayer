@@ -9,8 +9,10 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -233,7 +236,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                             .controllerHapticFeedback(interactionSource = importInteractionSource)
                             .padding(12.dp),
                     ) {
-                        Row {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_nav_import),
                                 contentDescription = null,
@@ -256,7 +259,10 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         activeContentColor = SpacePlayerOnAccent,
                         activeBackgroundColor = SpacePlayerAccent,
                     )
-                    Row(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Text(
                             text = libraryViewModel.selectedCategory.label,
                             color = SpacePlayerTextPrimary,
@@ -294,6 +300,9 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(3),
                             state = gridState,
+                            contentPadding = PaddingValues(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
                             modifier = Modifier.fillMaxSize(),
                         ) {
                             items(items = items, key = { it.uri }) { item ->
@@ -302,7 +311,6 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                     selected = libraryViewModel.selectedItem?.uri == item.uri,
                                     onClick = { libraryViewModel.selectItem(item) },
                                     onRequestFormatCorrection = { itemPendingCorrection = item },
-                                    modifier = Modifier.padding(8.dp),
                                 )
                             }
                         }
