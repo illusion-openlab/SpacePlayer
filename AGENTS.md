@@ -211,6 +211,17 @@ Stage 3 过程中发现并修复的**关键 bug**：`SubtitleFollowComponent` �
   id 用 `adb shell dumpsys display | grep mDisplayId` 查），对这次会话里的 ListView 布局选择器都没有任何反应。
   没有深挖是模拟器这次冷启动状态的问题还是 ListView/GridView hit-test 区域计算不同，遇到这种情况如实记录"点击
   没能验证"，不要靠反复重试同一坐标硬凑。
+- **用临时 `LaunchedEffect(key)` 自动触发某个流程验证时，如果这个流程会导致 App 自己的窗口容器被销毁重建（比如
+  `closeWindowContainer` 之后又 `openWindowContainer`），要格外小心 `key` 的选择**——窗口容器整个销毁重建时，
+  这个容器里的整个 Compose 组合（包括所有 `remember` 状态）都会从头重新初始化，之前用来"只触发一次"的
+  `remember { mutableStateOf(false) }` 守卫也会被重置。如果 `LaunchedEffect` 的 key 又是那种会在容器重建后重新
+  满足触发条件的值（比如 `libraryItems`，容器重建后 `LaunchedEffect(hasVideoPermission) { refreshLibrary() }`
+  会重新跑一次），临时调试代码就会在主窗口重新打开的瞬间又自动重新触发一遍，形成"打开沉浸→播放结束→主窗口重开→
+  立刻又自动重新打开沉浸"的快速循环，几轮下来就会把模拟器的画面合成器拖死（连续两次踩到这个坑，后来才通过
+  `adb logcat` 里两次一模一样的 `closeSpatialContainer`/`opening stage` 调用栈追出根因）。验证这类"退出会重建
+  容器"的流程时，临时触发代码要么只触发一次就彻底移除自身逻辑（不要留一个可能被重新满足的守卫条件），要么改用
+  `adb logcat` 追踪真实调用链（`closeWindowContainer`/`onContainerDestroy`/`openWindowContainer`/
+  `onContainerForeground` 这些日志行本身就足够证明整条链路是否按预期跑通，不一定需要额外截图）。
 
 ## 关键文件
 
@@ -312,6 +323,14 @@ Stage 3 过程中发现并修复的**关键 bug**：`SubtitleFollowComponent` �
 - `VideoPlayerComponent` + `CypressMediaPlayer`、`VideoMaterial`/`VideoDimensionMode`、
   `MeshResource.createVideoPanel`——平面视频播放已跑通并截图验证
 - `AttachmentPanel`（HUD + loading/error）+ `closeStage()` 退出流程——已跑通并截图验证
+- `SpatialNavigator.closeWindowContainer(id)`/`openWindowContainer(id)`——沉浸 Stage 打开时主动关闭主窗口、
+  Stage 销毁时（`DisposableEffect.onDispose`）重新打开，而不是指望 `closeStage()` 自己把主窗口带回来（两者是
+  独立的容器生命周期）。这是 SDK 自己教程里"expand to immersive"推荐的写法（`SpatialNavigator.kt` 源码里两者都是
+  普通 `fun`，不是 `suspend fun`，可以直接在 `DisposableEffect`/`onClick` 里同步调用，不需要 `coroutineScope.
+  launch`）。已通过 `adb logcat` 完整追踪过一次真实的开→播放结束→自动返回主窗口全流程（`WindowContainer-
+  SpacePlayerMainWindow onContainerDestroy` → 播放 `onCompleted` 触发 `closeStage()` → `Stage-ImmersiveStage
+  onContainerDestroy` → `opening windowContainer SpacePlayerMainWindow` → `onContainerForeground`），全程无
+  异常。
 - `MeshResource.createWithMeshModel` + 手写 `MeshModel`（`ecs/MeshGenerator.kt`）——360°/180° 球体/半球播放已跑通
   并截图验证（180° 转身后背面留空这一点未做实机验证，见上面的坑）
 - 环境天空盒（`ModelComponent` + `UnlitMaterial` + 复用的球体网格）+ 播放中实时切换——三个环境（电影院/星空/海景）

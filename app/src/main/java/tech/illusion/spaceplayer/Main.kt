@@ -10,6 +10,9 @@ import tech.illusion.spaceplayer.ui.library.MainLibraryScreen
 
 const val IMMERSIVE_STAGE_ID = "ImmersiveStage"
 
+// Must match the `pico.spatial.windowcontainer.id` meta-data value in AndroidManifest.xml.
+const val MAIN_WINDOW_ID = "SpacePlayerMainWindow"
+
 fun mainApp(scope: SpatialAppScope) =
     with(scope) {
         DefaultWindowContainer {

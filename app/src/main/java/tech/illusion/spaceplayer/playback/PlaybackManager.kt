@@ -26,6 +26,7 @@ class PlaybackManager(private val context: Context) {
         private set
 
     var onFirstFrameRendered: (() -> Unit)? = null
+    var onPlaybackCompleted: (() -> Unit)? = null
 
     private val callback = object : CypressMediaPlayerCallback {
         override fun onPrepared() {
@@ -38,7 +39,7 @@ class PlaybackManager(private val context: Context) {
             state = PlaybackState.PLAYING
         }
         override fun onCompleted() {
-            player.seekTo(0)
+            onPlaybackCompleted?.invoke()
         }
         override fun onSeekToCompleted() {}
         override fun onPaused() {

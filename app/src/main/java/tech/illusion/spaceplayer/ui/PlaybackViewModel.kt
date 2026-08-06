@@ -45,6 +45,10 @@ class PlaybackViewModel(
 
     var currentSubtitleText by mutableStateOf("")
         private set
+
+    /** Set when playback reaches the end - ImmersiveScene observes this to return to the main window. */
+    var returnToMainWindowRequested by mutableStateOf(false)
+        private set
     val screenEntity = Entity()
     val sphereEntity = Entity()
     val hemisphereEntity = Entity()
@@ -120,6 +124,7 @@ class PlaybackViewModel(
     fun startPlayback(item: VideoItem) {
         currentItem = item
         subtitleCues = loadSubtitleCues(item.subtitleUri)
+        returnToMainWindowRequested = false
         hmdTrackingProvider.start()
         val dimensionMode = item.stereoMode.toVideoDimensionMode()
         when (item.projection) {
@@ -166,6 +171,9 @@ class PlaybackViewModel(
         manager.onFirstFrameRendered = {
             historyStore.recordPlayed(item.uri.toString(), System.currentTimeMillis())
         }
+        manager.onPlaybackCompleted = {
+            returnToMainWindowRequested = true
+        }
         manager.setup(item.uri)
         isImmersive.value = true
     }
@@ -178,6 +186,7 @@ class PlaybackViewModel(
         manager.pause()
         hmdTrackingProvider.stop()
         isImmersive.value = false
+        returnToMainWindowRequested = false
     }
 
     private fun loadSubtitleCues(subtitleUri: Uri?): List<SubtitleCue> {

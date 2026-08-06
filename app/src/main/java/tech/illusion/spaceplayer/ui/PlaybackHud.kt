@@ -24,7 +24,7 @@ fun PlaybackHud(
     currentEnvironment: Environment,
     onPlayPause: () -> Unit,
     onSelectEnvironment: (Environment) -> Unit,
-    onExit: () -> Unit,
+    onReturnToMainWindow: () -> Unit,
 ) {
     PicoTheme {
         Box(
@@ -58,9 +58,9 @@ fun PlaybackHud(
                         style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
                     )
                 }
-                Button(onClick = onExit) {
+                Button(onClick = onReturnToMainWindow) {
                     Text(
-                        text = "退出",
+                        text = "返回主窗口",
                         color = PicoTheme.colorScheme.labelPrimary,
                         style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
                     )

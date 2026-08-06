@@ -1,6 +1,8 @@
 package tech.illusion.spaceplayer.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import com.pico.spatial.core.ecs.TransformComponent
@@ -10,6 +12,7 @@ import com.pico.spatial.ui.foundation.content.SpatialView
 import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
 import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
+import tech.illusion.spaceplayer.MAIN_WINDOW_ID
 import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
 import tech.illusion.spaceplayer.ecs.SubtitleFollowComponent
 import tech.illusion.spaceplayer.ecs.applySubtitleFollow
@@ -27,6 +30,28 @@ fun ImmersiveScene() {
     val lastFrameNs = remember { longArrayOf(System.nanoTime()) }
     val subtitleFollow = remember { SubtitleFollowComponent() }
 
+    fun returnToMainWindow() {
+        viewModel.exitImmersive()
+        coroutineScope.launch { navigator.closeStage() }
+    }
+
+    // The main window disappears while the immersive Stage is open (Full space visually occludes
+    // it) - close it explicitly on entry and reopen it once the Stage is torn down, per the SDK's
+    // own documented "expand to immersive" pattern, rather than relying on it reappearing on its
+    // own.
+    DisposableEffect(Unit) {
+        navigator.closeWindowContainer(MAIN_WINDOW_ID)
+        onDispose { navigator.openWindowContainer(MAIN_WINDOW_ID) }
+    }
+
+    // Auto-return to the main window once playback reaches the end, same path as the HUD's
+    // "返回主窗口" button.
+    LaunchedEffect(viewModel.returnToMainWindowRequested) {
+        if (viewModel.returnToMainWindowRequested) {
+            returnToMainWindow()
+        }
+    }
+
     PicoTheme {
         SpatialView(
             attachments = {
@@ -40,10 +65,7 @@ fun ImmersiveScene() {
                         currentEnvironment = viewModel.currentEnvironment.value,
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSelectEnvironment = { viewModel.switchEnvironment(it) },
-                        onExit = {
-                            viewModel.exitImmersive()
-                            coroutineScope.launch { navigator.closeStage() }
-                        },
+                        onReturnToMainWindow = { returnToMainWindow() },
                     )
                 }
                 AttachmentPanel(id = SUBTITLE_ATTACHMENT_ID) {
