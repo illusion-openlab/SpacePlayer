@@ -46,6 +46,12 @@ class PlaybackViewModel(
     var currentSubtitleText by mutableStateOf("")
         private set
 
+    var currentPositionMs by mutableStateOf(0L)
+        private set
+
+    val durationMs: Long
+        get() = manager.duration
+
     /** Set when playback reaches the end - ImmersiveScene observes this to return to the main window. */
     var returnToMainWindowRequested by mutableStateOf(false)
         private set
@@ -203,12 +209,24 @@ class PlaybackViewModel(
         currentSubtitleText = SubtitleCueLookup.textAt(subtitleCues, manager.player.getCurrentPosition())
     }
 
+    /** Called every frame from ImmersiveScene's SpatialView.update block, drives the HUD's progress bar. */
+    fun refreshPlaybackProgress() {
+        currentPositionMs = manager.player.getCurrentPosition()
+    }
+
     fun togglePlayPause() {
         when (manager.state) {
             PlaybackState.PLAYING -> manager.pause()
             PlaybackState.PAUSED, PlaybackState.READY -> manager.resume()
             else -> {}
         }
+    }
+
+    /** Assigns `currentPositionMs` immediately so the HUD thumb doesn't snap back for the one
+     * frame it takes `refreshPlaybackProgress()` to catch up with the player's real position. */
+    fun seekTo(ms: Long) {
+        manager.seekTo(ms)
+        currentPositionMs = ms
     }
 
     val showLoadingOverlay: Boolean

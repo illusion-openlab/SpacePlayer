@@ -63,8 +63,11 @@ fun ImmersiveScene() {
                         state = viewModel.manager.state,
                         isFlatProjection = viewModel.isFlatProjection.value,
                         currentEnvironment = viewModel.currentEnvironment.value,
+                        currentPositionMs = viewModel.currentPositionMs,
+                        durationMs = viewModel.durationMs,
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSelectEnvironment = { viewModel.switchEnvironment(it) },
+                        onSeek = { viewModel.seekTo(it) },
                         onReturnToMainWindow = { returnToMainWindow() },
                     )
                 }
@@ -130,6 +133,7 @@ fun ImmersiveScene() {
                 lastFrameNs[0] = nowNs
 
                 viewModel.refreshSubtitleText()
+                viewModel.refreshPlaybackProgress()
                 val subtitleEntity = attachments.entity(SUBTITLE_ATTACHMENT_ID)
                 val hmdPose = viewModel.hmdTrackingProvider.latestData?.hmdPose
                 if (subtitleEntity != null && hmdPose != null) {

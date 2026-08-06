@@ -382,6 +382,60 @@ bug，最后靠 `adb shell uiautomator dump` 直接看到"其它"那个 View 的
   组件接 hover 前，先解压对应版本的 sources jar（`~/.gradle/caches/modules-2/files-2.1/com.pico.spatial.ui/
   foundation/<version>/*/foundation-<version>-sources.jar`）确认真实签名，不要直接照抄技能文档里的调用方式。
 
+**播放控制器 HUD 加入进度条 + 播放/暂停/环境切换/返回全部换成内置组件（2026-08-06）**：用户先在
+`mcp__visualize` 画板上看了一版重设计（圆形强调色播放/暂停按钮 + 环境选择药丸 + 弱化的返回链接），确认后又追加
+"还有进度条控制"，最后确认"背景可以使用透明玻璃材质"（即维持已有的 `backgroundMaterial(true, Material.Regular)`，
+不需要换风格）。落地到真实代码：
+
+- `PlaybackViewModel.kt` 新增 `currentPositionMs`（`mutableStateOf`，每帧由 `refreshPlaybackProgress()` 从
+  `manager.player.getCurrentPosition()` 刷新，和已有的 `refreshSubtitleText()` 同一个节奏）、`durationMs`
+  （直接读 `manager.duration`）、`seekTo(ms)`（转发 `manager.seekTo(ms)` 并立即自赋值 `currentPositionMs`，避免
+  拖动松手后有一帧的回弹）。`ImmersiveScene.kt` 的 `update` 块里紧挨着 `refreshSubtitleText()` 加一行
+  `refreshPlaybackProgress()` 调用。
+- `PlaybackHud.kt` 整个重写：进度条用 SDK 内置 `com.pico.spatial.ui.design.Slider`（**不是**手写
+  `pointerInput`/`detectDragGestures`——`spatial-ui-design-style` 的 R2 built-in-first 规则加上反编译
+  `design-0.13.3-sources.jar` 里的 `Slider.kt` 确认这个组件本来就是给"音量/进度"这类连续值场景设计的，内置了
+  drag/tap 手势、`controllerHapticFeedback`、`OpDragBegin/OpDragEnd/OpClick` 音效，全部不用自己接）；
+  `sliderSpec = SliderDefaults.Small`（8dp 细轨道，比默认 `Regular` 的 24dp 更接近效果图的纤细进度条），
+  `colors = SliderDefaults.sliderColors(progressColor/progressHighColor/thumbColor/thumbHighColor =
+  SpacePlayerAccent)`，轨道色留空吃主题默认（自动适配玻璃背景，不需要硬编码）。拖动预览用一个
+  `dragPreviewMs: Long?` 本地状态：拖动中 `onValueChange` 只更新这个预览值（同时驱动时间文字和滑块位置），真正
+  `onSeek()` 只在 `onValueChangeFinished`（松手/点击结束）时提交一次——完全对应 `Slider` 文档里
+  `onValueChangeFinished` "不要用来更新值，只用来知道用户选完了"这句话的字面意思，而不是每次拖动 delta 都真的
+  seek 一次播放器。播放/暂停从纯文字 `Button` 换成 `IconButton`（`IconButtonDefaults.Small` + 强调色
+  containerColor + `SpacePlayerOnAccent` contentColor），新增 `ic_pause_bars.xml`（仿照已有的
+  `ic_play_triangle.xml` 风格，两条竖条，`#FF000000` 占位色，实际渲染色由 `IconButton` 的 `contentColor` 通过
+  `LocalContentColor` 接管）。环境选择器从纯文字 `Button` 换成和 `LibraryBottomBar.kt` 同款的 `ToggleableChip`
+  （复用 `env.dotColor()` 圆点、`ChipsDefaults.toggleableChipColors(activeContentColor/activeBackgroundColor =
+  SpacePlayerOnAccent/SpacePlayerAccent)`，`contentColor`/`backgroundColor` 留空吃主题默认——这里**没有**照搬
+  `LibraryBottomBar.kt` 里给 `SpacePlayerTextPrimary`/`SpacePlayerSurface` 显式赋值的做法，因为那两个是给
+  *不透明暖白背景*的主界面调的固定色，HUD 是悬浮在深色玻璃材质上的面板，应该让 `PicoTheme.colorScheme` 的
+  自适应角色自己去算对比色，而不是复用另一个背景语境下调好的固定值）。"返回主窗口"从 `Button` 降级成 `Link`
+  （默认 `contentColor = PicoTheme.colorScheme.interaction`，天然比强调色更弱化，不需要额外传色）。
+- **一个关键 API 事实是靠反编译 SDK 源码而不是 MCP 查到的**：这次会话里
+  `pico-spatial-knowledge` 的 `query_graph`/`get_node` 两次调用都直接超时/连接断开（1800s 无响应），MCP 整体
+  不可用，如实按 fallback 顺序走：先查项目已有代码里的 `PicoTheme.colorScheme.*`/`backgroundMaterial` 用法当
+  词表，再解压
+  `~/.gradle/caches/modules-2/files-2.1/com.pico.spatial.ui/design/0.13.3/*/design-0.13.3-sources.jar`
+  （用项目实际锁定的 0.13.3，不是最新版本）逐个读 `Slider.kt`/`IconButton.kt`/`Link.kt`/`Chips.kt` 的真实签名
+  ——`Slider`/`SymbolSlider`/`SegmentSlider`/`IconButton`/`Link`/`ToggleableChip` 的参数名、默认值、颜色角色
+  都是从这份源码原样抄出来的，不是猜的。下次如果 MCP 还是连不上，同样用这条路径，不要跳过验证直接编代码。
+- **调试"点击触发某个流程"时，`adb shell input tap` 对这套 spatial WindowContainer 的可靠性比之前 Stage 2/3
+  记录的更细致**：这次专门做了对照实验——`ToggleableChip`/`VideoGridCard` 这类自定义 `Modifier.clickable`
+  组件，用 `uiautomator dump` 拿到的 bounds 中心点去 `input tap`，**完全可靠、不需要任何坐标换算**（截图像素
+  和 `uiautomator`/`input tap` 坐标系不是同一回事，但两者的对应关系不需要关心——只要坐标来自 `uiautomator dump` 就行）；
+  但 `LibraryBottomBar.kt` 的"开始播放" `Button` 和顶部的格式筛选 `SegmentControl` style 那一排（`全部`/`平面`/
+  `180°`/`360°`）在 `uiautomator dump` 里全部精确报告 `bounds="[0,0][0,0]"`，无论怎么用截图三角测量法反推真实
+  U 坐标去 `input tap`（试过局部仿射插值、全局仿射插值，两者都因为面板本身有透视畸变而外推失败，算出来的坐标经常
+  超出 `2160` 的面板宽度）都点不中——**这不是坐标算错了，是这几个元素本身在这次会话的模拟器状态下对 `input tap`
+  没有反应**（可能和它们都是 SDK 内置 `Button`/segment 组件而不是自定义 `Box+clickable` 有关，没有深挖根因）。
+  另外发现一个容易误诊的坑：**验证"点击后有没有生效"至少要等 3-4 秒再截图**，这次两次把
+  "点了但没反应"误判为"坐标错了"，其实是截图截早了（1-2 秒），换环境选择器色点验证时，同一个坐标点两次，第一次
+  1 秒后截图看着没反应，第二次 3 秒后截图确认真的生效了。真正卡住的元素（"开始播放"）无论等多久截图都没用。遇到
+  "改了新代码但点不中入口验证"时，别在坐标上反复重试，直接用已有的临时
+  `LaunchedEffect(selectedItem) { /* 和 onClick 一样的代码 */ }` 自动触发方案（AGENTS.md 前面 Stage 2/3 就记过
+  这条），验证完立刻删掉，不要偷懒留着。
+
 ## 关键文件
 
 - `Main.kt` — `DefaultWindowContainer { MainLibraryScreen(modifier = Modifier.windowConstraints(...)) }` +
