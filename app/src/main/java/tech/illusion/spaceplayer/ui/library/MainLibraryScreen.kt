@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import tech.illusion.spaceplayer.library.VideoItem
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,6 +34,8 @@ import com.pico.spatial.ui.design.Text
 fun MainLibraryScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val libraryViewModel = remember { LibraryViewModel(context) }
+
+    var itemPendingCorrection by remember { mutableStateOf<VideoItem?>(null) }
 
     var hasVideoPermission by remember {
         mutableStateOf(
@@ -101,12 +104,26 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                             item = item,
                             selected = libraryViewModel.selectedItem?.uri == item.uri,
                             onClick = { libraryViewModel.selectItem(item) },
-                            onRequestFormatCorrection = {},
+                            onRequestFormatCorrection = { itemPendingCorrection = item },
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         )
                     }
                 }
             }
+        }
+
+        itemPendingCorrection?.let { item ->
+            FormatCorrectionPopup(
+                initialProjection = item.projection,
+                initialStereoMode = item.stereoMode,
+                onDismissRequest = { itemPendingCorrection = null },
+                onConfirm = { projection, stereoMode ->
+                    libraryViewModel.preferencesStore.setFormatOverride(item.uri, projection, stereoMode)
+                    libraryViewModel.refreshLibrary()
+                    libraryViewModel.refreshDownloads()
+                    itemPendingCorrection = null
+                },
+            )
         }
     }
 }

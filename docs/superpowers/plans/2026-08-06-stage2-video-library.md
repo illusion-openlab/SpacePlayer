@@ -1307,7 +1307,9 @@ git commit -m "Stage 2 Task 5: main library screen skeleton (sidebar + list + pe
 - Consumes: `SpatialPopup`/`SegmentControl`/`SegmentItem`（`com.pico.spatial.ui.design`/`com.pico.spatial.ui.design.windows`）、`VideoPreferencesStore.setFormatOverride`（Task 3，已通过 `LibraryViewModel.preferencesStore` 暴露）。
 - Produces: `FormatCorrectionPopup` Composable，`onConfirm: (Projection, StereoMode) -> Unit` 回调——`MainLibraryScreen` 里接线到 `libraryViewModel.preferencesStore.setFormatOverride(...)` + 刷新当前分类列表。
 
-- [ ] **Step 1: 写 `FormatCorrectionPopup.kt`**
+- [x] **Step 1: 写 `FormatCorrectionPopup.kt`**
+
+**实际结果**：内容和草稿基本一致（用了顶部 `import androidx.compose.ui.Modifier` 而不是草稿里散落的内联 `androidx.compose.ui.Modifier` 全限定名，纯风格差异）。`SegmentControl`/`SegmentItem`/`SpatialPopup` 三个组件的签名都和"关键探索结论"里反编译确认的一致，第一次编译就通过，没有踩到 Task 5 那种"看着有 onClick 实际没有"的坑。
 
 ```kotlin
 package tech.illusion.spaceplayer.ui.library
@@ -1396,7 +1398,7 @@ fun FormatCorrectionPopup(
 }
 ```
 
-- [ ] **Step 2: 在 `MainLibraryScreen.kt` 里接线**
+- [x] **Step 2: 在 `MainLibraryScreen.kt` 里接线**
 
 ```kotlin
 // MainLibraryScreen.kt 顶部 import 追加：
@@ -1425,7 +1427,9 @@ itemPendingCorrection?.let { item ->
 }
 ```
 
-- [ ] **Step 3: 构建确认编译通过**
+- [x] **Step 3: 构建确认编译通过**
+
+**实际结果**：`BUILD SUCCESSFUL`，一次通过。
 
 ```bash
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
@@ -1434,13 +1438,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 Expected: `BUILD SUCCESSFUL`。真正在设备上点开弹层的截图验证放在 Task 7（`Main.kt` 接入 `MainLibraryScreen` 之后一起做，避免这里裸测一个还没接入主窗口的 Composable）。
 
-- [ ] **Step 4: 提交**
-
-```bash
-git add app/src/main/java/tech/illusion/spaceplayer/ui/library/FormatCorrectionPopup.kt \
-  app/src/main/java/tech/illusion/spaceplayer/ui/library/MainLibraryScreen.kt
-git commit -m "Stage 2 Task 6: format correction popup"
-```
+- [x] **Step 4: 提交**
 
 ---
 
