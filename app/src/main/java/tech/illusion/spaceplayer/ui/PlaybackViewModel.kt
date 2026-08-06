@@ -1,10 +1,14 @@
 package tech.illusion.spaceplayer.ui
 
 import android.content.Context
+import android.net.Uri
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.pico.spatial.core.ecs.Entity
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.math.Vector3
+import com.pico.spatial.tracking.hmd.HMDTrackingProvider
 import tech.illusion.spaceplayer.ecs.PlaybackEntityAssembler
 import tech.illusion.spaceplayer.library.PlaybackHistoryStore
 import tech.illusion.spaceplayer.library.VideoItem
@@ -13,6 +17,9 @@ import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.PlaybackManager
 import tech.illusion.spaceplayer.playback.PlaybackState
 import tech.illusion.spaceplayer.playback.Projection
+import tech.illusion.spaceplayer.subtitle.SrtParser
+import tech.illusion.spaceplayer.subtitle.SubtitleCue
+import tech.illusion.spaceplayer.subtitle.SubtitleCueLookup
 
 const val SCREEN_WIDTH_METERS = 1.6f
 const val SCREEN_HEIGHT_METERS = 0.9f
@@ -27,11 +34,17 @@ private val CINEMA_SCREEN_POSITION = Vector3(0f, 1.6f, -4f)
 private val FLOATING_SCREEN_POSITION = Vector3(0f, 1.5f, -2f)
 
 class PlaybackViewModel(
-    context: Context,
+    private val context: Context,
     private val historyStore: PlaybackHistoryStore,
     private val preferencesStore: VideoPreferencesStore,
 ) {
     val manager = PlaybackManager(context)
+    val hmdTrackingProvider = HMDTrackingProvider()
+
+    private var subtitleCues: List<SubtitleCue> = emptyList()
+
+    var currentSubtitleText by mutableStateOf("")
+        private set
     val screenEntity = Entity()
     val sphereEntity = Entity()
     val hemisphereEntity = Entity()
@@ -106,6 +119,8 @@ class PlaybackViewModel(
 
     fun startPlayback(item: VideoItem) {
         currentItem = item
+        subtitleCues = loadSubtitleCues(item.subtitleUri)
+        hmdTrackingProvider.start()
         val dimensionMode = item.stereoMode.toVideoDimensionMode()
         when (item.projection) {
             Projection.FLAT -> {
@@ -161,7 +176,22 @@ class PlaybackViewModel(
             preferencesStore.setPreferredEnvironment(item.uri, currentEnvironment.value)
         }
         manager.pause()
+        hmdTrackingProvider.stop()
         isImmersive.value = false
+    }
+
+    private fun loadSubtitleCues(subtitleUri: Uri?): List<SubtitleCue> {
+        if (subtitleUri == null) return emptyList()
+        return runCatching {
+            context.contentResolver.openInputStream(subtitleUri)?.use { input ->
+                SrtParser.parse(input.readBytes().toString(Charsets.UTF_8))
+            } ?: emptyList()
+        }.getOrDefault(emptyList())
+    }
+
+    /** Called every frame from ImmersiveScene's SpatialView.update block. */
+    fun refreshSubtitleText() {
+        currentSubtitleText = SubtitleCueLookup.textAt(subtitleCues, manager.player.getCurrentPosition())
     }
 
     fun togglePlayPause() {
@@ -179,5 +209,6 @@ class PlaybackViewModel(
 
     fun onCleared() {
         manager.reset()
+        hmdTrackingProvider.stop()
     }
 }
