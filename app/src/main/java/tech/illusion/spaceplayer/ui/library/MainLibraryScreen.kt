@@ -219,8 +219,15 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                 ) {
                     SideNavigation(
                         header = {
+                            // padding(bottom) before height() so it adds a gap *below* the fixed-
+                            // height header box (extending the total space SideNavigation reserves
+                            // for it) rather than shrinking the header's own content area - the
+                            // header box and the nav item list below it would otherwise sit flush
+                            // against each other with no breathing room.
                             Box(
-                                modifier = Modifier.height(HEADER_ROW_HEIGHT),
+                                modifier = Modifier
+                                    .padding(bottom = 12.dp)
+                                    .height(HEADER_ROW_HEIGHT),
                                 contentAlignment = Alignment.BottomStart,
                             ) {
                                 Text(
