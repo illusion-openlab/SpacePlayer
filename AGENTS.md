@@ -436,6 +436,26 @@ bug，最后靠 `adb shell uiautomator dump` 直接看到"其它"那个 View 的
   `LaunchedEffect(selectedItem) { /* 和 onClick 一样的代码 */ }` 自动触发方案（AGENTS.md 前面 Stage 2/3 就记过
   这条），验证完立刻删掉，不要偷懒留着。
 
+**修复"连续播放下一个视频时没有清理上一个播放器"（2026-08-06）**：用户反馈退出沉浸模式后再播放下一个视频，上一个
+`CypressMediaPlayer` 没有被清理。反编译 `core-0.13.3-sources.jar` 里的 `CypressMediaPlayer.kt` 确认：
+`setDataSource()`/`prepareAsync()` 之前没有先调用 `player.reset()` 的话，旧数据源的解码器/资源不会被替换——
+`reset()` 的 KDoc 原文把"Switching between different video sources"列为典型用例，"Do NOT call this method within
+any CypressMediaPlayerCallback methods"是唯一的调用限制。原来的 `PlaybackManager.setup(uri)` 每次都直接
+`setDataSource()`，从没调用过这个 `reset()`（和 `PlaybackManager.reset()` 是两个不同的东西——后者额外调
+`player.close()` 把整个播放器实例销毁掉，只在 `onCleared()` 整个会话结束时调一次，不能每个视频都调）。修复：在
+`setup()` 开头加 `if (state != PlaybackState.INIT) player.reset()`，只在"不是这个播放器第一次使用"时重置，避免
+对一个从没配置过数据源的全新播放器调 `reset()`。
+
+验证这条修复时踩了一个和这次会话前面几条一致的坑，值得单独记一下：**同一份代码（带 `reset()`）连续测了三次，
+结果是"失败(全黑屏且 uiautomator dump 完全空)/成功/成功但只有视频没有 HUD"**——一度怀疑是 `reset()` 引入了
+新 bug，回退掉 `reset()` 重新测又成功了一次，正准备下结论"这个修复是错的"时，想起前面已经记过的教训
+（"连续快速 am force-stop + am start 重装/重启循环会把模拟器画面合成器拖死"）——这次验证过程本身就是短时间内
+连续 5-6 次 `install -r` + `force-stop` + `am start`，符合那条教训描述的触发条件。用 `pico-cli emulator stop`
++ `pico-cli emulator start` 完整重启模拟器后，同样带 `reset()` 的代码干净地测试成功（视频 A 自动播完→选视频
+B→HUD 正确显示 B 的进度条和 `0:06` 时长，logcat 无异常）。**结论：不要用"改了代码后连续测了几次，结果时好时坏"
+本身作为"这个改动有问题"的证据——先看是不是踩了已知的模拟器重装/重启节流限制，重启一次模拟器拿到干净状态再复测，
+而不是急着回退一个有官方文档背书的正确修复。**
+
 ## 关键文件
 
 - `Main.kt` — `DefaultWindowContainer { MainLibraryScreen(modifier = Modifier.windowConstraints(...)) }` +

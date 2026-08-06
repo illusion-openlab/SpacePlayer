@@ -59,6 +59,14 @@ class PlaybackManager(private val context: Context) {
     }
 
     fun setup(uri: Uri) {
+        // CypressMediaPlayer.reset() KDoc lists "switching between different video sources" as its
+        // own documented use case: setDataSource() on top of an already-configured player leaves the
+        // previous source's decoder/surface state behind instead of replacing it. Guarded on state
+        // rather than called unconditionally, since reset() is only meaningful once a source has
+        // actually been set - the very first setup() call finds a fresh, still-idle player.
+        if (state != PlaybackState.INIT) {
+            player.reset()
+        }
         state = PlaybackState.PREPARING
         duration = 1L
         hasFirstFrameRendered = false
