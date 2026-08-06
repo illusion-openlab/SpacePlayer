@@ -1,10 +1,12 @@
 package tech.illusion.spaceplayer.ui.library
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,18 +19,30 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import tech.illusion.spaceplayer.library.VideoItem
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
 import com.pico.spatial.ui.design.Button
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.SideNavigation
 import com.pico.spatial.ui.design.SideNavigationItem
 import com.pico.spatial.ui.design.Text
+import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
+import com.pico.spatial.ui.platform.containers.StageStyle
+import kotlinx.coroutines.launch
+import org.koin.core.context.GlobalContext
+import tech.illusion.spaceplayer.IMMERSIVE_STAGE_ID
+import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
+import tech.illusion.spaceplayer.library.RawVideoRecord
+import tech.illusion.spaceplayer.library.VideoItem
+import tech.illusion.spaceplayer.playback.Environment
+import tech.illusion.spaceplayer.playback.Projection
+import tech.illusion.spaceplayer.ui.PlaybackViewModel
 
 @Composable
 fun MainLibraryScreen(modifier: Modifier = Modifier) {
@@ -36,6 +50,26 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
     val libraryViewModel = remember { LibraryViewModel(context) }
 
     var itemPendingCorrection by remember { mutableStateOf<VideoItem?>(null) }
+
+    val navigator = LocalSpatialNavigator.current
+    val coroutineScope = rememberCoroutineScope()
+    val playbackScope = GlobalContext.get().getScope(PLAYBACK_SESSION_SCOPE_ID)
+    val playbackViewModel: PlaybackViewModel = playbackScope.get()
+    var selectedEnvironment by remember { mutableStateOf(Environment.CINEMA) }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val documentName = DocumentFile.fromSingleUri(context, uri)?.name ?: "导入的视频"
+            libraryViewModel.selectItem(
+                libraryViewModel.toVideoItem(
+                    RawVideoRecord(uri = uri, displayName = documentName, durationMs = 0L, sizeBytes = 0L),
+                ),
+            )
+        }
+    }
 
     var hasVideoPermission by remember {
         mutableStateOf(
@@ -80,7 +114,15 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                 LibraryCategory.entries.forEach { category ->
                     SideNavigationItem(
                         selected = libraryViewModel.selectedCategory == category,
-                        modifier = Modifier.clickable(onClick = { libraryViewModel.selectCategory(category) }),
+                        modifier = Modifier.clickable(
+                            onClick = {
+                                if (category == LibraryCategory.IMPORT) {
+                                    importLauncher.launch(arrayOf("video/*"))
+                                } else {
+                                    libraryViewModel.selectCategory(category)
+                                }
+                            },
+                        ),
                         content = {
                             Text(
                                 text = category.label,
@@ -106,6 +148,26 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                             onClick = { libraryViewModel.selectItem(item) },
                             onRequestFormatCorrection = { itemPendingCorrection = item },
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        )
+                    }
+                }
+
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    if (libraryViewModel.selectedItem != null) {
+                        LibraryBottomBar(
+                            selectedItem = libraryViewModel.selectedItem,
+                            selectedEnvironment = selectedEnvironment,
+                            onSelectEnvironment = { selectedEnvironment = it },
+                            onStartPlayback = {
+                                val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
+                                val itemToPlay = if (item.projection == Projection.FLAT) {
+                                    item.copy(preferredEnvironment = item.preferredEnvironment ?: selectedEnvironment)
+                                } else {
+                                    item
+                                }
+                                playbackViewModel.startPlayback(itemToPlay)
+                                coroutineScope.launch { navigator.openStage(IMMERSIVE_STAGE_ID, style = StageStyle.Full) }
+                            },
                         )
                     }
                 }

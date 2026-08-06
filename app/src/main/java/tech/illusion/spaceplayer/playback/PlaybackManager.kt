@@ -1,6 +1,8 @@
 package tech.illusion.spaceplayer.playback
 
 import android.content.Context
+import android.content.res.AssetFileDescriptor
+import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,12 +52,17 @@ class PlaybackManager(private val context: Context) {
         }
     }
 
-    fun setup(assetPath: String) {
+    fun setup(uri: Uri) {
         state = PlaybackState.PREPARING
         duration = 1L
         hasFirstFrameRendered = false
         player.registerCypressMediaPlayerCallback(callback)
-        val afd = context.assets.openFd(assetPath)
+        val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            ?: error("Cannot open file descriptor for $uri")
+        // AssetFileDescriptor.UNKNOWN_LENGTH (-1) makes CypressMediaPlayer's native decoder hang in
+        // PREPARING forever instead of erroring out - pass the real length via ParcelFileDescriptor's
+        // own fstat-backed size instead (content:// Uris from MediaStore/SAF are backed by real files).
+        val afd = AssetFileDescriptor(pfd, 0, pfd.statSize)
         player.setDataSource(afd)
         afd.close()
         player.setVolume(INIT_VOLUME)

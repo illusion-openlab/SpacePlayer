@@ -1459,7 +1459,11 @@ Expected: `BUILD SUCCESSFUL`。真正在设备上点开弹层的截图验证放�
 - Consumes: `VideoItem`（Task 1）、`Environment`（`playback/Environment.kt`）、Task 5 的 `MainLibraryScreen`/`LibraryViewModel`。
 - Produces: `PlaybackViewModel.startPlayback(item: VideoItem)`（替代原来的三个 `startXxxTestPlayback`），`LibraryBottomBar` Composable——Task 8 会再改 `PlaybackViewModel` 加历史/偏好环境持久化。
 
-- [ ] **Step 1: 改 `PlaybackManager.kt`——`setup` 从 asset 路径改成 `Uri`**
+**实现时的真实发现（关键 bug，不是草稿里写的样子）：**`AssetFileDescriptor(pfd, 0, AssetFileDescriptor.UNKNOWN_LENGTH)`——用 `UNKNOWN_LENGTH`（`-1`）构造 `AssetFileDescriptor` 会让 `CypressMediaPlayer` 的底层解码器卡死在 `PREPARING` 状态，既不报错（`onError` 不触发）也不报 `onPrepared`，`state` 永远停在 `PREPARING`，"加载中…" 遮罩永远盖着，`AppRecordManagerService` 日志显示 `onVideoPlayEvent: start=false`。这个坑只有在真机/模拟器上用真实 `content://` Uri 播放才会暴露——Stage 1 的 asset 路径用的是 `context.assets.openFd(assetPath)` 返回的 `AssetFileDescriptor`（自带正确长度），从来没有传过 `UNKNOWN_LENGTH`，所以 Stage 1 的截图验证完全没触发这个坑。修复：用 `pfd.statSize`（`ParcelFileDescriptor` 基于 `fstat` 的真实文件大小）代替 `UNKNOWN_LENGTH`——MediaStore/SAF 的 `content://` Uri 背后都是真实文件，`statSize` 能拿到正确长度。修复后用 `adb logcat` 抓到 `AppRecordManagerService: onSessionVideoEvent ... isPlaying=true fps=30`，确认解码器真的在跑，不是截图凑巧看着像。
+
+- [x] **Step 1: 改 `PlaybackManager.kt`——`setup` 从 asset 路径改成 `Uri`**
+
+**实际结果（长度参数和草稿不一样，见上面的真实发现）**：
 
 ```kotlin
 // PlaybackManager.kt 顶部 import 追加：
@@ -1486,7 +1490,8 @@ import android.net.Uri
         player.registerCypressMediaPlayerCallback(callback)
         val pfd = context.contentResolver.openFileDescriptor(uri, "r")
             ?: error("Cannot open file descriptor for $uri")
-        val afd = AssetFileDescriptor(pfd, 0, AssetFileDescriptor.UNKNOWN_LENGTH)
+        // 不能传 AssetFileDescriptor.UNKNOWN_LENGTH，见本 Task 顶部"实现时的真实发现"。
+        val afd = AssetFileDescriptor(pfd, 0, pfd.statSize)
         player.setDataSource(afd)
         afd.close()
         player.setVolume(INIT_VOLUME)
@@ -1494,7 +1499,9 @@ import android.net.Uri
     }
 ```
 
-- [ ] **Step 2: 改 `PlaybackViewModel.kt`——三个测试方法合并成 `startPlayback(item: VideoItem)`**
+- [x] **Step 2: 改 `PlaybackViewModel.kt`——三个测试方法合并成 `startPlayback(item: VideoItem)`**
+
+**实际结果**：和草稿一致，一次编译通过。
 
 ```kotlin
 // PlaybackViewModel.kt 顶部 import 追加：
@@ -1558,11 +1565,15 @@ import tech.illusion.spaceplayer.playback.Projection
 
 `PlaybackEntityAssembler`/`MeshGenerator`/`disableAllVideoEntities`/`assembleEnvironmentsIfNeeded`/`repositionScreenForCurrentEnvironment`/`updateEnvironmentVisibility` 全部不变，沿用 Stage 1 的实现——这个 Task 只重排"怎么调用它们"，不改它们本身。
 
-- [ ] **Step 3: 改 `di/PlaybackModule.kt`——如果 `PlaybackViewModel` 构造签名没变就不用动**
+- [x] **Step 3: 改 `di/PlaybackModule.kt`——如果 `PlaybackViewModel` 构造签名没变就不用动**
+
+**实际结果**：确实没动，Task 8 才会改。
 
 `PlaybackViewModel` 的构造函数签名仍然是 `PlaybackViewModel(context: Context)`（Task 7 没有新增构造参数——历史/偏好环境持久化是 Task 8 才加），所以 `PlaybackModule.kt` 这一步不需要改。（如果实现时发现真的需要额外参数，在 Task 8 里改，不要提前在这里改。）
 
-- [ ] **Step 4: 写 `LibraryBottomBar.kt`（环境选择器 + 开始播放按钮）**
+- [x] **Step 4: 写 `LibraryBottomBar.kt`（环境选择器 + 开始播放按钮）**
+
+**实际结果**：和草稿一致——`Button`/`Text` 都用了正常的 onClick/style 参数，没有像 `SideNavigationItem`/`ListItem` 那样踩坑。"未选中不禁用底部栏而是直接不渲染"这个保守方案也照原计划执行了。
 
 ```kotlin
 package tech.illusion.spaceplayer.ui.library
@@ -1619,7 +1630,9 @@ fun LibraryBottomBar(
 
 未选中任何视频时（`selectedItem == null`），设计稿要求整个底部操作栏禁用——`onStartPlayback`/`onSelectEnvironment` 的调用方（`MainLibraryScreen`）在 Step 5 里通过"`selectedItem == null` 时不渲染这个 Row"来实现，而不是给 `Button` 传一个还不存在的 `enabled` 参数（先看这个组件是否真的有 `enabled` 参数——`com.pico.spatial.ui.design.Button` 目前项目里的用法都没传过 `enabled`，为了不在没验证过的情况下假设它存在，这里选保守方案：不选中视频时直接不渲染底部栏）。
 
-- [ ] **Step 5: 改 `MainLibraryScreen.kt`——接入底部操作栏 + SAF"其它" + 真实播放**
+- [x] **Step 5: 改 `MainLibraryScreen.kt`——接入底部操作栏 + SAF"其它" + 真实播放**
+
+**实际结果**：`androidx.documentfile:documentfile` 检查发现确实已经是传递依赖（本机缓存里能找到 `1.0.0`），仍按计划显式声明了版本。其余接线和草稿一致。
 
 ```kotlin
 // MainLibraryScreen.kt 顶部 import 追加：
@@ -1714,7 +1727,9 @@ implementation(libs.androidx.documentfile)
 
 （如果命令有输出，说明已经是传递依赖，可以跳过这一步，但仍然建议显式声明，理由同 Task 5 的 `activity-compose`。）
 
-- [ ] **Step 6: 改 `Main.kt`——接入 `MainLibraryScreen` + `windowConstraints`**
+- [x] **Step 6: 改 `Main.kt`——接入 `MainLibraryScreen` + `windowConstraints`**
+
+**实际结果**：`Modifier.windowConstraints(...)` 在 `DefaultWindowContainer { ... }` 内容 lambda 里直接可用（receiver 作用域正确，见"关键探索结论"第 2 条），一次编译通过，不需要额外的 receiver 显式声明。
 
 ```kotlin
 package tech.illusion.spaceplayer
@@ -1740,13 +1755,15 @@ fun mainApp(scope: SpatialAppScope) =
     }
 ```
 
-- [ ] **Step 7: 删除 `PlaceholderMainScreen.kt`**
+- [x] **Step 7: 删除 `PlaceholderMainScreen.kt`**
 
 ```bash
 rm app/src/main/java/tech/illusion/spaceplayer/ui/PlaceholderMainScreen.kt
 ```
 
-- [ ] **Step 8: 构建 + 单元测试**
+- [x] **Step 8: 构建 + 单元测试**
+
+**实际结果**：`./gradlew clean assembleDebug :app:testDebugUnitTest` → `BUILD SUCCESSFUL`，27 个单测（Task 1-3 累计）全部 PASS。
 
 ```bash
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
@@ -1755,30 +1772,18 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 Expected: `BUILD SUCCESSFUL`，Stage 1 遗留的 `StereoModeMappingTest`（4 个）+ Stage 2 新增的所有单测全部 PASS。
 
-- [ ] **Step 9: 模拟器截图验证——真实视频从选择到播放的完整链路**
+- [x] **Step 9: 模拟器截图验证——真实视频从选择到播放的完整链路**
 
-```bash
-pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
-pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
-for i in $(seq 1 6); do sleep 2; done
-pico-cli capture screenshot --out ./artifacts/task7-library-screen.png --device emulator-5554
-```
+**实际结果（走查过程比草稿复杂很多，记录真实发现）**：
 
-看截图确认：权限已授予（Task 5 已经手动授权过一次的话这里应该直接进列表；如果又回到权限请求页说明每次装/卸 APK 权限状态会重置，属预期，重新点一次"去授权"），左侧四个分类可见，"视频资源库"分类下能看到 Step 6（Task 5）塞进去的 `library_test.mp4`。用临时 `LaunchedEffect` 验证选中+播放这条链路（验证完删除）：
+1. 装好 APK、推 `library_test.mp4`/`download_test.mp4` 进 Movies/Download 并触发 MediaStore 扫描后启动，先截到权限门（"SpacePlayer 需要访问本机视频的权限才能显示视频库" + "去授权"）。
+2. **"去授权"按钮点不动**——和 Stage 1 的已知限制一样，`adb shell input tap` 打不中 `DefaultWindowContainer` 内的 Compose 按钮。加了临时 `LaunchedEffect(Unit) { permissionLauncher.launch(...) }` 自动触发（验证完已删除）。
+3. 触发后弹出的**系统权限对话框**（"Allow 'SpacePlayer' to Access Photos & Videos"）是真正的系统级 UI（不是 spatial 容器内的 Compose 元素），`adb shell input tap` 对它本该有效——但**必须用 `adb shell uiautomator dump` 拿精确 bounds 算出的坐标**，肉眼从截图估的坐标点了两次都没点中正确按钮位置（截图是 3D 合成场景，像素位置和真实 Android 触摸坐标空间不是 1:1 映射，这一点在计划里第一次被踩实）。
+4. 点中"Allow"后 `dumpsys package` 确认 `READ_MEDIA_VIDEO: granted=true`，但**App 自己的 Compose 状态没有响应**——`rememberLauncherForActivityResult` 的回调没有触发 UI 更新（怀疑是这套多容器 spatial 架构下 Activity Result 回调链路的环境特性，没有深挖根因）。解法：`adb shell am force-stop` + 重新 `pico-cli app launch`，让 `checkSelfPermission` 在全新启动时重新求值——这次直接进了列表页，侧栏四分类 + `library_test.mp4`（缩略图/时长/格式徽标）都正确显示。
+5. 加临时 `LaunchedEffect(libraryViewModel.libraryItems) { ... playbackViewModel.startPlayback(...); navigator.openStage(...) }` 验证选中+播放链路，**第一次截图发现视频时间戳卡在 `00:00:00.000` 不动、"加载中…" 遮罩一直不消失**——这就是本 Task 顶部"实现时的真实发现"里记录的 `AssetFileDescriptor.UNKNOWN_LENGTH` 卡死 bug。改用 `pfd.statSize` 后重新安装/启动，"加载中…" 正确消失，`adb logcat` 抓到 `AppRecordManagerService: onSessionVideoEvent ... isPlaying=true fps=30`（对应真实解码器在跑），后续截图因为测试视频只有约 11 秒、播放完后 `onCompleted` 只 `seekTo(0)` 不重播，画面看起来"没变"其实是巧合撞上了播放完成后的静止帧，不是没播放——已经用 logcat 时间戳交叉验证过，不是凭截图外观猜的。
+6. 全部验证完后**删除了两处临时 `LaunchedEffect`**，重新 `./gradlew clean assembleDebug :app:testDebugUnitTest` 确认 27 个单测依旧全部 PASS、构建干净。
 
-```kotlin
-// 临时加在 MainLibraryScreen.kt 函数体最前面，验证完必须删除
-LaunchedEffect(libraryViewModel.libraryItems) {
-    val firstItem = libraryViewModel.libraryItems.firstOrNull() ?: return@LaunchedEffect
-    libraryViewModel.selectItem(firstItem)
-    playbackViewModel.startPlayback(firstItem.copy(preferredEnvironment = Environment.CINEMA))
-    navigator.openStage(IMMERSIVE_STAGE_ID, style = StageStyle.Full)
-}
-```
-
-重新构建/安装/启动/截图，确认真实文件（不是 assets 里的测试视频，是 Step 6/Task 5 塞进 `/sdcard/Movies/` 的那个文件）能在沉浸 Stage 里播放，然后**删除这段临时代码**，重新构建一次确认干净。
-
-- [ ] **Step 10: 提交**
+- [x] **Step 10: 提交**
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/playback/PlaybackManager.kt \
@@ -1998,4 +2003,5 @@ git commit -m "Stage 2 regression pass + AGENTS.md update"
 - **未验证项**（已在对应 Task 里如实标注，不是遗漏）：MV-HEVC 容器探测准确率（Task 2，本机无真实样本文件）；`Button` 是否有 `enabled` 参数未经验证，Task 7 里选择了不依赖它的保守方案。
 - **已确认按预期工作**：`SideNavigationItem`/`ListItem` 的 `BoxScope` receiver 在尾随 lambda 里省略确实能编译通过（Task 5 Step 5 验证）。
 - **计划草稿里猜错、实现时才发现的**：`SideNavigationItem` 没有 `onClick` 参数（Task 5 Step 5，改用 `Modifier.clickable`）；`ListItem` 同理也没有 `onClick`（Task 5 Step 4，同样改用 `Modifier.clickable`）；`org.json.JSONObject`/`Uri.parse()` 在纯 JVM 单元测试里会抛 `RuntimeException`（Task 3，改用手写字符串序列化 + 全程 `String` key）。这几处都是"看源码签名没问题，但没有先写一个最小可编译验证就直接假设它有某个通用参数（onClick）"导致的——后续 Task 如果又要用一个新的 SpatialUI 组件，写代码前应该先确认它是否真的有 `onClick`，不要想当然。
+- **本计划里最严重的一个坑（Task 7）**：`AssetFileDescriptor(pfd, 0, AssetFileDescriptor.UNKNOWN_LENGTH)` 会让 `CypressMediaPlayer` 卡死在 `PREPARING`，不报错、不崩溃、只是永远"加载中"——这个坑**编译期完全查不出来，静态审查也看不出来**，只有真正在模拟器上播放一个通过 `ContentResolver.openFileDescriptor` 打开的真实文件才会暴露。这是"verify before completion"这条原则在本次执行里最有说服力的一次体现：如果满足于"能进入沉浸 Stage、画面没有黑屏崩溃"就报告 Task 7 完成，这个 bug 会被完全放过，直到用户真正播放一个长视频、发现它永远停在首帧才会被发现。修复用 `pfd.statSize`，并且用 `adb logcat` 里的 `AppRecordManagerService: isPlaying=true fps=30` 交叉验证，没有仅凭"画面看起来在播"就下结论。
 - **类型一致性**：`VideoItem`/`DetectedFormat`/`FormatSource`（Task 1）→ `FormatDetector`（Task 2）→ `VideoPreferencesStore`/`PlaybackHistoryStore`（Task 3）→ `VideoLibraryRepository`/`RawVideoRecord`（Task 4）→ `LibraryViewModel.toVideoItem`（Task 5）→ `PlaybackViewModel.startPlayback(item: VideoItem)`（Task 7）→ `historyStore`/`preferencesStore`（Task 8）全程用同一套类型和函数名，没有出现"Task 3 叫 `setFormatOverride` 但 Task 6 调用 `updateFormatOverride`"这类不一致。

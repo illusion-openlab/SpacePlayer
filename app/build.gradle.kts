@@ -54,6 +54,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.koin.android)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.documentfile)
     testImplementation(libs.junit)
     testImplementation(libs.mockito.core)
     androidTestImplementation(libs.androidx.junit)

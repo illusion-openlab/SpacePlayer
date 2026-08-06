@@ -6,10 +6,11 @@ import com.pico.spatial.core.ecs.Entity
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.math.Vector3
 import tech.illusion.spaceplayer.ecs.PlaybackEntityAssembler
+import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.PlaybackManager
 import tech.illusion.spaceplayer.playback.PlaybackState
-import tech.illusion.spaceplayer.playback.StereoMode
+import tech.illusion.spaceplayer.playback.Projection
 
 const val SCREEN_WIDTH_METERS = 1.6f
 const val SCREEN_HEIGHT_METERS = 0.9f
@@ -42,6 +43,9 @@ class PlaybackViewModel(context: Context) {
     // to show the environment switcher (only meaningful for flat video), and a plain field read
     // of an SDK Entity's `enabled` property wouldn't trigger recomposition on its own.
     var isFlatProjection = mutableStateOf(true)
+        private set
+
+    var currentItem: VideoItem? = null
         private set
 
     private var screenAssembled = false
@@ -94,62 +98,51 @@ class PlaybackViewModel(context: Context) {
         updateEnvironmentVisibility()
     }
 
-    fun startTestPlayback(assetPath: String, stereoMode: StereoMode) {
-        assembleEnvironmentsIfNeeded()
-        if (!screenAssembled) {
-            PlaybackEntityAssembler.assembleScreenEntity(
-                screenEntity,
-                manager.player,
-                SCREEN_WIDTH_METERS,
-                SCREEN_HEIGHT_METERS,
-                stereoMode.toVideoDimensionMode(),
-            )
-            screenAssembled = true
+    fun startPlayback(item: VideoItem) {
+        currentItem = item
+        val dimensionMode = item.stereoMode.toVideoDimensionMode()
+        when (item.projection) {
+            Projection.FLAT -> {
+                assembleEnvironmentsIfNeeded()
+                if (!screenAssembled) {
+                    PlaybackEntityAssembler.assembleScreenEntity(
+                        screenEntity, manager.player, SCREEN_WIDTH_METERS, SCREEN_HEIGHT_METERS, dimensionMode,
+                    )
+                    screenAssembled = true
+                }
+                disableAllVideoEntities()
+                screenEntity.enabled = true
+                isFlatProjection.value = true
+                currentEnvironment.value = item.preferredEnvironment ?: currentEnvironment.value
+                repositionScreenForCurrentEnvironment()
+                updateEnvironmentVisibility()
+            }
+            Projection.SPHERE_360 -> {
+                if (!sphereAssembled) {
+                    PlaybackEntityAssembler.assembleSphereEntity(
+                        sphereEntity, manager.player, SPHERE_RADIUS_METERS, FULL_SPHERE_FOV_DEGREES, dimensionMode,
+                    )
+                    sphereAssembled = true
+                }
+                disableAllVideoEntities()
+                sphereEntity.enabled = true
+                isFlatProjection.value = false
+                updateEnvironmentVisibility() // screenEntity is now disabled, so this turns all 3 off
+            }
+            Projection.HEMISPHERE_180 -> {
+                if (!hemisphereAssembled) {
+                    PlaybackEntityAssembler.assembleSphereEntity(
+                        hemisphereEntity, manager.player, SPHERE_RADIUS_METERS, HEMISPHERE_FOV_DEGREES, dimensionMode,
+                    )
+                    hemisphereAssembled = true
+                }
+                disableAllVideoEntities()
+                hemisphereEntity.enabled = true
+                isFlatProjection.value = false
+                updateEnvironmentVisibility() // screenEntity is now disabled, so this turns all 3 off
+            }
         }
-        disableAllVideoEntities()
-        screenEntity.enabled = true
-        isFlatProjection.value = true
-        repositionScreenForCurrentEnvironment()
-        updateEnvironmentVisibility()
-        manager.setup(assetPath)
-        isImmersive.value = true
-    }
-
-    fun startSphereTestPlayback(assetPath: String, stereoMode: StereoMode) {
-        if (!sphereAssembled) {
-            PlaybackEntityAssembler.assembleSphereEntity(
-                sphereEntity,
-                manager.player,
-                SPHERE_RADIUS_METERS,
-                FULL_SPHERE_FOV_DEGREES,
-                stereoMode.toVideoDimensionMode(),
-            )
-            sphereAssembled = true
-        }
-        disableAllVideoEntities()
-        sphereEntity.enabled = true
-        isFlatProjection.value = false
-        updateEnvironmentVisibility() // screenEntity is now disabled, so this turns all 3 off
-        manager.setup(assetPath)
-        isImmersive.value = true
-    }
-
-    fun startHemisphereTestPlayback(assetPath: String, stereoMode: StereoMode) {
-        if (!hemisphereAssembled) {
-            PlaybackEntityAssembler.assembleSphereEntity(
-                hemisphereEntity,
-                manager.player,
-                SPHERE_RADIUS_METERS,
-                HEMISPHERE_FOV_DEGREES,
-                stereoMode.toVideoDimensionMode(),
-            )
-            hemisphereAssembled = true
-        }
-        disableAllVideoEntities()
-        hemisphereEntity.enabled = true
-        isFlatProjection.value = false
-        updateEnvironmentVisibility() // screenEntity is now disabled, so this turns all 3 off
-        manager.setup(assetPath)
+        manager.setup(item.uri)
         isImmersive.value = true
     }
 
