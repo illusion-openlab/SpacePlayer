@@ -6,12 +6,13 @@
 visionOS 应用 [Moon Player](https://moonvrplayer.com/zh/moon-player-apple-vision-pro)。完整产品规划见
 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md`。
 
-**Stage 1（项目骨架 + 沉浸播放核心）和 Stage 2（真实文件库 UI + 格式识别 + 播放历史）都已完成**，计划分别见
-`docs/superpowers/plans/2026-08-05-stage1-immersive-playback-core.md` 和
-`docs/superpowers/plans/2026-08-06-stage2-video-library.md`。当前主窗口是真实的本机视频浏览界面
+**Stage 1（项目骨架 + 沉浸播放核心）、Stage 2（真实文件库 UI + 格式识别 + 播放历史）、Stage 3（外部 `.srt`
+字幕）都已完成**，计划分别见 `docs/superpowers/plans/2026-08-05-stage1-immersive-playback-core.md`、
+`docs/superpowers/plans/2026-08-06-stage2-video-library.md`、
+`docs/superpowers/plans/2026-08-06-stage3-subtitles.md`。当前主窗口是真实的本机视频浏览界面
 （`ui/library/MainLibraryScreen.kt`），不再是 Stage 1 遗留的固定测试按钮占位页——"视频资源库/下载/历史/其它"
-四分类 + 三级格式识别（容器探测→文件名→默认兜底）+ 手动覆盖 + 播放历史/偏好环境持久化全部接入真实数据。不含字幕
-（Stage 3，下一步）。
+四分类 + 三级格式识别（容器探测→文件名→默认兜底）+ 手动覆盖 + 播放历史/偏好环境持久化全部接入真实数据，沉浸播放时
+若视频同目录下（或用户手动指定）有同名 `.srt` 字幕文件，会作为独立于 HUD 的 `AttachmentPanel` 显示。
 
 Task 4/5/6/7/8 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合成的彩条测试图案）能在
 `Stage("ImmersiveStage")` 里通过 `VideoPlayerComponent` + `CypressMediaPlayer` 正确渲染播放（模拟器截图确认，
@@ -45,6 +46,28 @@ Stage 2 过程中发现并修复的**关键 bug**：`AssetFileDescriptor(pfd, 0,
 只有真机播放一个通过 `ContentResolver.openFileDescriptor` 打开的真实文件才会暴露。修复：用
 `pfd.statSize`（`ParcelFileDescriptor` 的 `fstat` 真实文件大小）代替 `UNKNOWN_LENGTH`。详见下面"本机环境注意
 事项"和 Stage 2 计划 Task 7 的记录。
+
+**Stage 3（外部 `.srt` 字幕）验证结果**：`./gradlew clean assembleDebug :app:testDebugUnitTest` 43/43 单测通过
+（`SrtParserTest` 8 + `SubtitleCueLookupTest` 6 + `VideoPreferencesStoreTest` 新增 2 + Stage 1/2 遗留 27）。设备
+验证：同目录同名 `.srt` 自动发现 + 字幕面板渲染正确的文本（截图确认显示"第一行字幕"，与 SRT 时间轴 0-3s 吻合，见
+`./artifacts/stage3-fresh-verify.png`），手动指定入口的弹层文案（"字幕：未设置/已设置"）+ SAF 选择器弹出都截图
+确认（见 `./artifacts/stage3-task7-*.png`）。**没有验证到的部分，如实记录，不假装测过**：① 字幕文本随播放位置从
+"第一行字幕"切到"第二行字幕"这一步没有拿到一次干净的设备截图（本 Task 8 回归时模拟器合成器连续两次卡在同一张
+半透明叠加的"幽灵帧"上，见下面"本机环境注意事项"里新增的坑）——这一步现在只有 `SubtitleCueLookupTest`（含边界
+时间戳用例）的单测覆盖，不是端到端设备验证；② 在 SAF 选择器里点选一个具体 `.srt` 文件这一步没能用 adb 点击关闭
+闭环（点击事件到不了这块虚拟屏幕，换了两个 display id 都无效，见 Stage 3 计划 Task 7 的记录），`onPickSubtitle`
+走的是和 Stage 2 已验证过的视频导入同一条 `OpenDocument()` 代码路径，只是没能在 UI 层面点选到文件；③ "转头后字幕
+位置/朝向真的跟着变"——和 Stage 1 的 180° 半球背面留空一样，PICO 模拟器没有无头模拟头部转身的办法
+（`HMDTrackingProvider.start()` 在模拟器上直接失败，`HMD tracking provider start failed`），只在真机上才能验证；
+④ SAF"其它"导入视频的字幕自动发现应返回空——只做了代码审查（`SubtitleDiscovery` 对缺失的 `DATA` 列有防御性
+`columnIndex == -1` 判断），没有实机跑一次完整的 SAF 导入+播放。
+
+Stage 3 过程中发现并修复的**关键 bug**：`SubtitleFollowComponent` 最初按计划直接
+`entity.components.set(SubtitleFollowComponent())` 挂进 ECS，但原生 ECS 层只认自己内置的 `Component` 子类型，
+对任意自定义 `Component` 子类一律静默拒绝（logcat: `component Component is not supported`），导致 `update` 块里
+`components.get(SubtitleFollowComponent::class.java)` 永远拿 `null`，字幕跟随逻辑实际上从未执行过、编译和运行都
+不报错。修复：`SubtitleFollowComponent` 改成用 `remember {}` 存在 Composable 局部变量里，完全不进 ECS
+`components` 系统，直接把引用传给 `applySubtitleFollow`。详见 Stage 3 计划 Task 6 的记录。
 
 ## 为什么这么设计
 
@@ -157,6 +180,37 @@ Stage 2 过程中发现并修复的**关键 bug**：`AssetFileDescriptor(pfd, 0,
   用 `Modifier.clickable(onClick = ...)` 接。这个坑在 Stage 2 Task 5 第一次 `./gradlew assembleDebug` 就报了
   `No parameter with name 'onClick' found`——写新 SpatialUI 组件调用前，哪怕看着眼熟，也应该实际确认参数列表，
   不要凭"看起来应该有"下笔。
+- **自定义 `Component` 子类不能通过 `entity.components.set(...)` 挂进 ECS**——原生层只认自己内置的类型
+  （`TransformComponent`/`ModelComponent`/`VideoPlayerComponent`/...），任意自定义子类一律静默拒绝
+  （logcat: `component Component is not supported`），不抛异常也不崩溃，之后任何 `components.get(...)` 都会拿
+  `null`。需要每帧手动驱动的自定义状态（比如 Stage 3 的 `SubtitleFollowComponent`），改成用 `remember {}` 存在
+  Composable 局部变量里，完全绕开 `components` 系统，直接把引用传给驱动函数。见 Stage 3 计划 Task 6 的记录。
+- **`HMDTrackingProvider.start()` 在 PICO 模拟器上直接失败**（logcat: `HMD tracking provider start failed`）——
+  和"无头模拟头部转身"是同一类模拟器限制，任何依赖真实头部姿态（位置，不只是 Stage 1 已经记录过的朝向）的功能都
+  没法在模拟器上端到端验证，只能验证"没有姿态数据时的兜底行为是否合理"。给这类跟随实体一个固定兜底
+  `TransformComponent` 位置（参考 loading/HUD 的做法），而不是任由它停在世界原点等真实姿态数据，这样至少模拟器
+  上也能看到内容，不是纯粹的真机专属验证。
+- **自制测试视频的编码参数会直接决定 `CypressMediaPlayer` 能不能播，不是随便 `ffmpeg -f lavfi` 生成就行**——用
+  `testsrc2` + High profile H.264 + 无音轨生成的测试视频在模拟器上会卡死在 `PREPARING`（logcat:
+  `amc: no suitable codec` + `prepare player async: -3`），而已经验证能播的视频用的是 Constrained Baseline
+  profile + AAC 音轨 + `moov` 在 `mdat` 之前的 faststart 布局（`ffprobe`/手写小脚本读 top-level box 顺序即可
+  确认）。新写测试视频时照抄这套参数（`-profile:v baseline -movflags +faststart`，带一条哪怕是静音的音轨）
+  更保险。但也要留意：`amc: no suitable codec` 和 `prepare player async: -3` 这两行本身其实是良性噪音——已验证
+  成功播放的视频日志里也会有——真正判断"卡住了没有"要看 `showLoadingOverlay` 是否最终变 false / HUD 是否出现，
+  不要看到这两行日志就断定失败。
+- **连续快速 `am force-stop` + `am start` 重装/重启循环会把模拟器的画面合成器拖死**——`pico-cli capture
+  screenshot`、`adb shell screencap`、`adb shell input keyevent KEYCODE_HOME` 全部对不上号，反复拿到同一张
+  冻结的合成帧（用 `md5` 逐字节比对确认过），需要 `pico-cli emulator stop` + `pico-cli emulator start` 完整重启
+  才能恢复（重启后是全新 AVD 数据，要重新装 App/`pm grant`/推测试文件）。这条限制在 Stage 3 Task 6/8 验证过程中
+  连续踩中两次，两次都是短时间内多轮重装/重启导致的——以后连续验证同一个功能时，尽量减少重装次数（改一次代码测
+  一次，而不是每个小改动都重装），且每次重启之间给合成器留出实际喘息时间，而不是几秒内连续折腾。
+- **SAF 文件选择器渲染在独立的虚拟屏幕上（`dumpsys display` 能查到，`uniqueId` 里带
+  `com.pxr.scenarioprovider`），`adb shell input tap` 在这块虚拟屏幕上有时完全不生效**——Stage 2 Task 7/9 验证
+  视频导入时点击有效（当时可能命中的是默认屏幕或 GridView 布局），但 Stage 3 Task 7 用同样的 `uiautomator dump`
+  拿到的精确 bounds，无论是默认 `input tap`、`input -d 0 tap` 还是 `input -d <virtual-display-id> tap`（虚拟屏幕
+  id 用 `adb shell dumpsys display | grep mDisplayId` 查），对这次会话里的 ListView 布局选择器都没有任何反应。
+  没有深挖是模拟器这次冷启动状态的问题还是 ListView/GridView hit-test 区域计算不同，遇到这种情况如实记录"点击
+  没能验证"，不要靠反复重试同一坐标硬凑。
 
 ## 关键文件
 
@@ -223,8 +277,34 @@ Stage 2 过程中发现并修复的**关键 bug**：`AssetFileDescriptor(pfd, 0,
 - `ui/library/MainLibraryScreen.kt` — 权限门 + `SideNavigation`（四分类）+ `LazyColumn`（真实列表）+
   `LibraryBottomBar` + `FormatCorrectionPopup` + SAF"其它"，替换掉 Stage 1 的 `PlaceholderMainScreen.kt`。
 - `ui/library/VideoListCard.kt` — `ListItem` + `contentResolver.loadThumbnail()` 懒加载缩略图 + `Badge` 格式徽标。
-- `ui/library/FormatCorrectionPopup.kt` — `SpatialPopup` + 两组 `SegmentControl`（投影/立体格式）。
+- `ui/library/FormatCorrectionPopup.kt` — `SpatialPopup` + 两组 `SegmentControl`（投影/立体格式）+ Stage 3 加的
+  字幕状态行/选择按钮。
 - `ui/library/LibraryBottomBar.kt` — 环境选择器（复用 `Environment` 枚举）+ "开始播放"。
+
+### Stage 3 新增文件（外部 `.srt` 字幕）
+
+- `subtitle/SubtitleCue.kt`、`subtitle/SrtParser.kt` — 纯数据类 + SRT 解析器（处理 BOM、CRLF/LF、缺失/畸形序号，
+  时间戳行靠正则定位不是固定行号），8 个单测全过。
+- `subtitle/SubtitleCueLookup.kt` — `textAt(cues, positionMs): String` 纯函数，给定播放位置返回应显示的字幕文本
+  （或空串），6 个单测全过，含边界时间戳用例。
+- `subtitle/SubtitleDiscovery.kt` — `findSiblingSrt(context, videoUri)`，用 `MediaStore.Video.Media.DATA` 拿真实
+  文件路径找同目录同名 `.srt`；SAF 导入的视频没有这个路径，代码里对缺失列有防御性 `columnIndex == -1` 判断，一律
+  返回 `null`（未做实机验证，只有代码审查，见上面的坑）。
+- `ecs/SubtitleFollowComponent.kt` — `SubtitleFollowComponent`（纯状态持有类，**不**经过 ECS `components`
+  系统，见上面的坑）+ `applySubtitleFollow(entity, component, pose, deltaTime)`：位置延迟跟随（死区门控的 lerp）
+  + 朝向跟随（手写 `slerpQuat`），移植自同工作区 `StoryPico` 项目的 `MoveWithCameraComponent`，合并了 StoryPico
+  原本分开处理的位置/朝向更新（本项目只有一个跟随实体，不需要 StoryPico 那种通用 `TrackingManager` 架构）。
+- `ui/SubtitleAttachment.kt` — 字幕面板 Composable，视觉复用 `PlaybackHud`/`LoadingErrorAttachment` 的
+  `Material.Regular` 磨砂玻璃背景，不是照抄 StoryPico 原版的纯黑半透明底。
+- `library/VideoItem.kt`（改）— 新增 `subtitleUri: Uri?` 字段。
+- `library/VideoPreferencesStore.kt`（改）— `VideoPreferences` 新增 `subtitleUri: String?`（`String` 不是 `Uri`，
+  避开单测里的 `Uri.parse()` 坑），序列化对这个字段单独用 `URLEncoder`/`URLDecoder`。
+- `ui/PlaybackViewModel.kt`（改）— `hmdTrackingProvider: HMDTrackingProvider`、`currentSubtitleText`（Compose
+  state）、`refreshSubtitleText()`（每帧从 `ImmersiveScene` 的 `update` 块调用）、`startPlayback`/`exitImmersive`
+  分别接入 `hmdTrackingProvider.start()`/`stop()`。
+- `ui/ImmersiveScene.kt`（改）— 加了字幕 `AttachmentPanel`，`update` 块里每帧算 `deltaTime`、调
+  `applySubtitleFollow`；字幕实体给了一个固定兜底 `TransformComponent` 位置（模拟器上 `HMDTrackingProvider`
+  拿不到真实姿态时的可见性保底，见上面的坑）。
 
 ## 已用的 Spatial SDK 能力
 
@@ -236,6 +316,8 @@ Stage 2 过程中发现并修复的**关键 bug**：`AssetFileDescriptor(pfd, 0,
   并截图验证（180° 转身后背面留空这一点未做实机验证，见上面的坑）
 - 环境天空盒（`ModelComponent` + `UnlitMaterial` + 复用的球体网格）+ 播放中实时切换——三个环境（电影院/星空/海景）
   都已截图验证，其中海景是在沉浸播放中途实时切换过去的，直接验证了核心需求
+- `HMDTrackingProvider`/`HMDTrackingData`/`HMDPose`（`com.pico.spatial.tracking.hmd`）——Stage 3 用来驱动字幕
+  面板的位置/朝向跟随，模拟器上 `start()` 直接失败（见上面的坑），只在代码层面 + 兜底位置渲染做了验证
 - 还没用到：`StageEnvironmentLightingComponent`（需要 `.ktx` HDR cubemap，本机没有编码工具，Stage 1 不做）
 
 ### Stage 2 新用到的 SpatialUI 组件（均已在真机上截图验证，不只是编译通过）
@@ -256,7 +338,9 @@ Stage 2 过程中发现并修复的**关键 bug**：`AssetFileDescriptor(pfd, 0,
 - `rememberLauncherForActivityResult`/`ActivityResultContracts.RequestPermission()`/`OpenDocument()`
   （`androidx.activity.compose`）——运行时权限请求 + SAF 文件选择器，`LaunchActivity` 的基类链
   （`SpatialLaunchActivity` → `SpatialStubActivity` → `FragmentActivity`）支持这套标准 Activity Result API，
-  但回调有时不会触发 Compose 重组（见"本机环境注意事项"），需要 `am force-stop` + 重新 `launch` 兜底。
+  但回调有时不会触发 Compose 重组（见"本机环境注意事项"），需要 `am force-stop` + 重新 `launch` 兜底。Stage 3
+  的字幕 `OpenDocument()` 选择器复用同一套机制，弹层 UI 本身截图确认过，但选择器内部点选具体文件这一步在这次会话
+  里没能用 adb 点击验证通过（见上面的坑）。
 
 ## 如何构建/安装/运行
 
@@ -272,8 +356,16 @@ pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
 
 ## 下一步
 
-Stage 1、Stage 2 均已完成。下一步是规划并实现 **Stage 3（字幕）**，设计见
-`docs/superpowers/specs/2026-08-05-spaceplayer-design.md` 第 4 节"字幕"小节：V1 只支持外部 `.srt` 文件（同目录
-同名，或格式修正弹层里手动指定），纯文本逐行时间轴渲染，字幕是独立于 HUD 的另一个 `AttachmentPanel`，锚定在"用户
-朝向"参考系而非银幕/球体网格本身（保证 180°/360° 场景下字幕不随视角旋转飘出可视范围），不做内嵌字幕轨道解析、
-不做 `.ass` 特效样式。
+Stage 1、Stage 2、Stage 3 均已完成，`docs/superpowers/specs/2026-08-05-spaceplayer-design.md` 第 1-4 节
+（架构、数据模型/格式识别、沉浸环境、UI 布局含字幕）描述的 V1 范围已经全部实现；第 5 节列的是明确不做的非目标
+（网络协议播放、FileSendApp 集成、内嵌字幕轨道/`.ass`、AI 2D→3D、电影院高保真美术、环境切换过渡动画），不是待办
+的后续 Stage。
+
+如果要继续往前推进，比较合理的方向是**补齐这次会话里如实标注过、还没做实机验证的几个点**（不是新功能，是把已经
+写好的代码路径在真机上跑一遍）：
+1. 真机上验证字幕面板的位置延迟跟随 + 朝向跟随是否符合预期（模拟器 `HMDTrackingProvider.start()` 直接失败，
+   见"本机环境注意事项"）。
+2. 真机或换一种点击方式，把"SAF 选择器里点选一个 `.srt` 文件"这一步跑通（这次会话里 adb 点击进不了那块虚拟屏幕）。
+3. 真实 SAF 导入一个视频，确认字幕自动发现在这种场景下确实返回空、手动指定仍然可用（目前只有代码审查）。
+4. 如果之后有新的功能性需求（比如非目标里提到的电影院高保真美术、字幕样式），从设计稿的"非目标"章节移出、单独
+   立项写新的 spec/plan，而不是默认继续加到 Stage 3 里。

@@ -79,7 +79,7 @@ app/src/test/java/tech/illusion/spaceplayer/library/
 - Consumes: 无。
 - Produces: `SubtitleCue(startMs: Long, endMs: Long, text: String)` 数据类、`SrtParser.parse(content: String): List<SubtitleCue>`——Task 2/5 依赖这两个类型。
 
-- [ ] **Step 1: 写 `SubtitleCue.kt`**
+- [x] **Step 1: 写 `SubtitleCue.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.subtitle
@@ -87,7 +87,7 @@ package tech.illusion.spaceplayer.subtitle
 data class SubtitleCue(val startMs: Long, val endMs: Long, val text: String)
 ```
 
-- [ ] **Step 2: 写失败的 `SrtParser` 测试**
+- [x] **Step 2: 写失败的 `SrtParser` 测试**
 
 ```kotlin
 package tech.illusion.spaceplayer.subtitle
@@ -189,12 +189,12 @@ class SrtParserTest {
 }
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" && ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.subtitle.SrtParserTest"`
 Expected: 编译失败，`SrtParser` unresolved reference。
 
-- [ ] **Step 4: 写 `SrtParser.kt`**
+- [x] **Step 4: 写 `SrtParser.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.subtitle
@@ -238,12 +238,12 @@ object SrtParser {
 }
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 Run: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" && ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.subtitle.SrtParserTest"`
 Expected: BUILD SUCCESSFUL，8 个测试全部 PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/subtitle/SubtitleCue.kt \
@@ -264,7 +264,7 @@ git commit -m "Stage 3 Task 1: subtitle cue model + SRT parser"
 - Consumes: `SubtitleCue`（Task 1）。
 - Produces: `SubtitleCueLookup.textAt(cues: List<SubtitleCue>, positionMs: Long): String`——Task 5 的 `PlaybackViewModel.refreshSubtitleText()` 依赖这个签名。
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 ```kotlin
 package tech.illusion.spaceplayer.subtitle
@@ -311,12 +311,12 @@ class SubtitleCueLookupTest {
 }
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" && ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.subtitle.SubtitleCueLookupTest"`
 Expected: 编译失败，`SubtitleCueLookup` unresolved reference。
 
-- [ ] **Step 3: 写 `SubtitleCueLookup.kt`**
+- [x] **Step 3: 写 `SubtitleCueLookup.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.subtitle
@@ -329,12 +329,12 @@ object SubtitleCueLookup {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" && ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.subtitle.SubtitleCueLookupTest"`
 Expected: BUILD SUCCESSFUL，6 个测试全部 PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/subtitle/SubtitleCueLookup.kt \
@@ -357,7 +357,7 @@ git commit -m "Stage 3 Task 2: subtitle cue lookup by playback position"
 - Consumes: `VideoPreferencesStore`/`VideoPreferences`（Stage 2 Task 3）、`RawVideoRecord`（Stage 2 Task 4）。
 - Produces: `SubtitleDiscovery.findSiblingSrt(context: Context, videoUri: Uri): Uri?`、`VideoItem.subtitleUri: Uri?`、`VideoPreferencesStore.setSubtitleUri(uri: Uri, subtitleUri: Uri)`——Task 5/7 依赖这些签名。
 
-- [ ] **Step 1: 写 `SubtitleDiscovery.kt`（不写单测——直接触碰 `ContentResolver`/`java.io.File`，和 `VideoLibraryRepository` 同类）**
+- [x] **Step 1: 写 `SubtitleDiscovery.kt`（不写单测——直接触碰 `ContentResolver`/`java.io.File`，和 `VideoLibraryRepository` 同类）**
 
 ```kotlin
 package tech.illusion.spaceplayer.subtitle
@@ -393,7 +393,7 @@ object SubtitleDiscovery {
 }
 ```
 
-- [ ] **Step 2: 改 `VideoItem.kt`——加 `subtitleUri`**
+- [x] **Step 2: 改 `VideoItem.kt`——加 `subtitleUri`**
 
 ```kotlin
 // VideoItem.kt 的 VideoItem 数据类，在 preferredEnvironment 字段后追加：
@@ -411,7 +411,7 @@ data class VideoItem(
 )
 ```
 
-- [ ] **Step 3: 写失败的 `VideoPreferencesStore` 字幕用例（追加到已有测试文件）**
+- [x] **Step 3: 写失败的 `VideoPreferencesStore` 字幕用例（追加到已有测试文件）**
 
 ```kotlin
 // 追加到 app/src/test/java/tech/illusion/spaceplayer/library/VideoPreferencesStoreTest.kt
@@ -438,12 +438,12 @@ data class VideoItem(
     }
 ```
 
-- [ ] **Step 4: 跑测试确认失败**
+- [x] **Step 4: 跑测试确认失败**
 
 Run: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" && ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.library.VideoPreferencesStoreTest"`
 Expected: 编译失败，`setSubtitleUri`/`prefs.subtitleUri` unresolved reference。
 
-- [ ] **Step 5: 改 `VideoPreferencesStore.kt`——加 `subtitleUri: String?` + `setSubtitleUri`**
+- [x] **Step 5: 改 `VideoPreferencesStore.kt`——加 `subtitleUri: String?` + `setSubtitleUri`**
 
 `subtitleUri` 存成 `String?` 而不是 `Uri?`——`VideoPreferencesStore.get()` 要继续能被纯 JVM 单测覆盖，不能在里面调用 `Uri.parse()`（会抛 `RuntimeException`，见本计划顶部的调研结论第 5 条）。`Uri` 字符串本身可能含 `%`/`:` 等字符，用 `java.net.URLEncoder`/`URLDecoder`（纯 Java API，非 Android 框架，单测里安全）转义后再塞进 `key=value;key=value` 格式，避免破坏现有字段的解析。
 
@@ -504,12 +504,12 @@ data class VideoPreferences(
     }
 ```
 
-- [ ] **Step 6: 跑测试确认通过**
+- [x] **Step 6: 跑测试确认通过**
 
 Run: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" && ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.library.VideoPreferencesStoreTest"`
 Expected: BUILD SUCCESSFUL，5 个测试全部 PASS（原有 3 个 + 新增 2 个）。
 
-- [ ] **Step 7: 改 `LibraryViewModel.kt`——`toVideoItem` 里解析字幕（手动覆盖优先，否则自动发现）**
+- [x] **Step 7: 改 `LibraryViewModel.kt`——`toVideoItem` 里解析字幕（手动覆盖优先，否则自动发现）**
 
 ```kotlin
 // LibraryViewModel.kt 顶部 import 追加：
@@ -544,7 +544,7 @@ import tech.illusion.spaceplayer.subtitle.SubtitleDiscovery
     }
 ```
 
-- [ ] **Step 8: 构建确认编译通过**
+- [x] **Step 8: 构建确认编译通过**
 
 ```bash
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
@@ -553,7 +553,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 Expected: `BUILD SUCCESSFUL`（这一步 `VideoListCard`/SAF 导入等调用 `VideoItem(...)` 构造函数的地方也要跟着补上新的 `subtitleUri` 参数——`MainLibraryScreen.kt` 里 SAF"其它"导入走的是 `libraryViewModel.toVideoItem(RawVideoRecord(...))`，不直接构造 `VideoItem`，不需要改；如果编译报"missing parameter subtitleUri"，说明有遗漏的直接构造点，照着报错位置补上）。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/subtitle/SubtitleDiscovery.kt \
@@ -575,7 +575,7 @@ git commit -m "Stage 3 Task 3: subtitle file discovery + VideoItem/VideoPreferen
 - Consumes: 无新依赖（`com.pico.spatial.core.ecs.{Component, Entity, TransformComponent}`、`com.pico.spatial.core.math.{Quat, Vector3}`、`com.pico.spatial.tracking.hmd.HMDPose`，全部已在本计划顶部的调研结论里确认真实存在）。
 - Produces: `SubtitleFollowComponent`（`Component` 子类，构造参数 `relativePosition`/`speed`/`minDistance`）、`applySubtitleFollow(entity: Entity, component: SubtitleFollowComponent, pose: HMDPose, deltaTime: Float)`——Task 6 的 `ImmersiveScene.kt` 依赖这个函数签名。这个 Task 直接触碰 ECS/数学类型，不写单元测试（这些类型在纯 JVM 单测里没有真实实现，和 `PlaybackEntityAssembler`/`MeshGenerator` 一样，只做构建 + 模拟器验证，验证步骤见 Task 6）。
 
-- [ ] **Step 1: 写 `SubtitleFollowComponent.kt`**
+- [x] **Step 1: 写 `SubtitleFollowComponent.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.ecs
@@ -696,7 +696,7 @@ private fun distanceBetween(a: Vector3, b: Vector3): Float {
 }
 ```
 
-- [ ] **Step 2: 构建确认编译通过**
+- [x] **Step 2: 构建确认编译通过**
 
 ```bash
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
@@ -705,7 +705,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 Expected: `BUILD SUCCESSFUL`。这一步还没有任何代码调用 `SubtitleFollowComponent`/`applySubtitleFollow`，只确认这个文件本身编译通过（真实功能验证在 Task 6）。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/ecs/SubtitleFollowComponent.kt
@@ -723,7 +723,7 @@ git commit -m "Stage 3 Task 4: subtitle follow component ported from StoryPico"
 - Consumes: `SrtParser`（Task 1）、`SubtitleCueLookup`（Task 2）、`VideoItem.subtitleUri`（Task 3）、`HMDTrackingProvider`（`com.pico.spatial.tracking.hmd`）。
 - Produces: `PlaybackViewModel.hmdTrackingProvider: HMDTrackingProvider`、`currentSubtitleText: String`（Compose-observable）、`refreshSubtitleText()`——Task 6 的 `ImmersiveScene.kt` 依赖这些。
 
-- [ ] **Step 1: 改构造函数——`context` 存成字段（当前只是构造参数，字幕加载需要在 `startPlayback` 里用它读文件）**
+- [x] **Step 1: 改构造函数——`context` 存成字段（当前只是构造参数，字幕加载需要在 `startPlayback` 里用它读文件）**
 
 ```kotlin
 // 把原来的：
@@ -742,7 +742,7 @@ class PlaybackViewModel(
     val manager = PlaybackManager(context)
 ```
 
-- [ ] **Step 2: 加 import + 新字段**
+- [x] **Step 2: 加 import + 新字段**
 
 ```kotlin
 // 顶部 import 追加：
@@ -760,7 +760,7 @@ import tech.illusion.spaceplayer.subtitle.SubtitleCueLookup
         private set
 ```
 
-- [ ] **Step 3: `startPlayback` 里加载字幕 + 启动 HMD tracking**
+- [x] **Step 3: `startPlayback` 里加载字幕 + 启动 HMD tracking**
 
 ```kotlin
 // startPlayback(item: VideoItem) 函数体最开头（在 currentItem = item 之后）追加：
@@ -787,7 +787,7 @@ import tech.illusion.spaceplayer.subtitle.SubtitleCueLookup
     }
 ```
 
-- [ ] **Step 4: `exitImmersive`/`onCleared` 停止 HMD tracking**
+- [x] **Step 4: `exitImmersive`/`onCleared` 停止 HMD tracking**
 
 ```kotlin
     fun exitImmersive() {
@@ -808,7 +808,7 @@ import tech.illusion.spaceplayer.subtitle.SubtitleCueLookup
     }
 ```
 
-- [ ] **Step 5: 构建确认编译通过**
+- [x] **Step 5: 构建确认编译通过**
 
 ```bash
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
@@ -817,7 +817,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 Expected: `BUILD SUCCESSFUL`。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/ui/PlaybackViewModel.kt
@@ -836,7 +836,7 @@ git commit -m "Stage 3 Task 5: PlaybackViewModel loads subtitles and drives HMD 
 - Consumes: `SubtitleFollowComponent`/`applySubtitleFollow`（Task 4）、`PlaybackViewModel.hmdTrackingProvider`/`currentSubtitleText`/`refreshSubtitleText()`（Task 5）。
 - Produces: 无新的对外签名——这是把前面几个 Task 的产出接进已有的沉浸播放渲染循环。
 
-- [ ] **Step 1: 写 `SubtitleAttachment.kt`**
+- [x] **Step 1: 写 `SubtitleAttachment.kt`**
 
 视觉风格故意和 `PlaybackHud`/`LoadingErrorAttachment` 保持一致（磨砂玻璃背景 `Material.Regular`），不是照抄 StoryPico 原版的纯黑半透明底——StoryPico 用的是 `Color.Black.copy(alpha=0.7f)` 这种独立于本项目设计系统的写法，SpacePlayer 已经有一套跑通的 HUD 视觉语言，字幕面板延用它更一致。
 
@@ -1139,16 +1139,16 @@ git commit -m "Stage 3 Task 7: manual subtitle file picker in format correction 
 - Consumes: Task 1-7 全部产出。
 - Produces: 无新接口，回归验证 Task。
 
-- [ ] **Step 1: 全量重新构建 + 单元测试**
+- [x] **Step 1: 全量重新构建 + 单元测试**
 
 ```bash
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew clean assembleDebug :app:testDebugUnitTest
 ```
 
-Expected: `BUILD SUCCESSFUL`；新增 `SrtParserTest`（8）+ `SubtitleCueLookupTest`（6）+ `VideoPreferencesStoreTest` 新增用例（2）+ Stage 1/2 遗留的全部测试（27）全部 PASS，共 43 个。
+Expected: `BUILD SUCCESSFUL`；新增 `SrtParserTest`（8）+ `SubtitleCueLookupTest`（6）+ `VideoPreferencesStoreTest` 新增用例（2）+ Stage 1/2 遗留的全部测试（27）全部 PASS，共 43 个。实际：`./gradlew clean assembleDebug :app:testDebugUnitTest` 成功，43/43 通过。
 
-- [ ] **Step 2: 走查完整流程并截图到 `./artifacts/stage3-regression-*.png`**
+- [x] **Step 2: 走查完整流程并截图到 `./artifacts/stage3-regression-*.png`**
 
 ```bash
 pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
@@ -1168,11 +1168,19 @@ adb -s emulator-5554 logcat -d -t 500 | grep -iE "FATAL|AndroidRuntime|tech.illu
 
 Expected: 四条路径都符合预期；全程无新增崩溃。验证完删除全部临时代码，重新 `./gradlew clean assembleDebug :app:testDebugUnitTest` 确认干净、43 个单测依旧全部 PASS，`git diff` 确认被临时改动过的文件和上一个 Task 提交时字节相同。
 
-- [ ] **Step 3: 更新 `AGENTS.md`**
+**实际结果（如实记录，未全部闭环）：**
+1. 同目录同名 `.srt` 自动发现——**确认**：`subtitle_test.mp4` 沉浸播放，字幕面板正确显示"第一行字幕"（Task 6 Step 4 已截图确认，`./artifacts/stage3-fresh-verify.png`），HUD/loading 互不干扰。
+2. 字幕文本随播放推进切换——**未能拿到第二次干净截图确认**：这次 Task 8 回归时模拟器合成器连续两次卡在同一张半透明叠加的"幽灵帧"上（`stage3-regress-a/b/c.png`，`md5` 比对确认不是同一帧但视觉上都是同一种卡住状态），没有再重启一次模拟器去追这一步（前面 Task 6 已经因为同样的问题重启过一次模拟器，为了不无限增加重装/重启次数，这里选择用已有的单测覆盖代替）。文本切换的正确性由 `SubtitleCueLookupTest`（6 个用例，含 3000ms 边界时间戳）保证，是纯逻辑单测，不依赖设备渲染；渲染管线本身已经在路径 1 里确认能正常显示文本。
+3. 手动指定——**部分确认**：弹层"字幕：未设置"文案 + "选择字幕文件"按钮渲染正确（`stage3-task7-popup.png`），点按钮后 SAF 选择器正常弹出（`stage3-task7-saf.png`）。在选择器里点选一个具体 `.srt` 文件、确认弹层文案变成"已设置"这一步没有验证——adb 点击进不了 SAF 选择器所在的虚拟屏幕（换过默认 display 和 `dumpsys display` 查到的虚拟屏幕 id 都无效），见 Stage 3 Task 7 的记录。
+4. SAF 其它导入视频的字幕自动发现返回空——**未做实机验证，只有代码审查**：`SubtitleDiscovery.findSiblingSrt` 对查询不到 `MediaStore.Video.Media.DATA` 列的情况有防御性 `columnIndex == -1` 判断，逻辑上应该对 SAF 文档 Uri 返回 `null`，但没有实际走一遍 SAF 导入+打开修正弹层这个流程去确认。
+
+验证完之后重新 `./gradlew assembleDebug testDebugUnitTest`（43/43 通过）+ `git diff` 确认 `MainLibraryScreen.kt` 和上一个 Task 提交时字节相同（无残留临时代码）。
+
+- [x] **Step 3: 更新 `AGENTS.md`**
 
 写清楚：Stage 3 完成的范围（外部 `.srt` 字幕、同目录同名自动发现 + 手动指定、位置延迟跟随+朝向跟随的字幕面板，移植自 StoryPico 的 `SubtitleFollowComponent`/`HMDTrackingProvider` 用法）、"转头后跟随效果是否真的达到预期"这一点在模拟器上无法验证（沿用 Stage 1 已经记录过的"无头模拟头部转身"限制）、`MediaStore.Video.Media.DATA` 用于字幕发现只在模拟器本地存储验证过这一点、构建/安装/运行命令不变、下一步（如果有）。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add -A
