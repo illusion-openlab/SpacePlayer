@@ -1,0 +1,46 @@
+<resources>
+    <string name="projection_flat">平面</string>
+    <string name="projection_180">180°</string>
+    <string name="projection_360">360°</string>
+
+    <string name="stereo_mono">单目</string>
+    <string name="stereo_sbs_full">左右 3D</string>
+    <string name="stereo_tb_full">上下 3D</string>
+    <string name="stereo_mvhevc">MV-HEVC</string>
+    <string name="stereo_sbs_badge">SBS</string>
+    <string name="stereo_tb_badge">TB</string>
+
+    <string name="format_source_container">容器探测</string>
+    <string name="format_source_filename">文件名识别</string>
+    <string name="format_source_manual">手动指定</string>
+    <string name="format_source_default">默认兜底</string>
+
+    <string name="library_category_library">视频资源库</string>
+    <string name="library_category_downloads">下载</string>
+    <string name="library_category_history">历史</string>
+    <string name="library_category_import">其它</string>
+    <string name="library_import_action">其它 · 选择文件</string>
+    <string name="library_imported_video_default_name">导入的视频</string>
+    <string name="library_permission_rationale">SpacePlayer 需要访问本机视频的权限才能显示视频库</string>
+    <string name="library_grant_permission">去授权</string>
+    <string name="library_filter_all">全部</string>
+    <string name="library_start_playback">开始播放</string>
+
+    <string name="format_popup_title">修正格式</string>
+    <string name="subtitle_status_set">字幕：已设置</string>
+    <string name="subtitle_status_unset">字幕：未设置</string>
+    <string name="subtitle_pick_file">选择字幕文件</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_confirm">确定</string>
+
+    <string name="environment_cinema">电影院</string>
+    <string name="environment_starry_sky">星空</string>
+    <string name="environment_seaside">海景</string>
+
+    <string name="playback_pause">暂停</string>
+    <string name="playback_play">播放</string>
+    <string name="playback_panorama_auto_immersive">全景视频 · 自动沉浸</string>
+    <string name="playback_return_to_main_window">返回主窗口</string>
+    <string name="playback_loading">加载中…</string>
+    <string name="playback_load_failed">视频加载失败</string>
+</resources>

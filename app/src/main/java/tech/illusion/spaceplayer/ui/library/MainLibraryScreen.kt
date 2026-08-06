@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -72,6 +73,7 @@ import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.Projection
 import tech.illusion.spaceplayer.ui.PlaybackViewModel
+import tech.illusion.spaceplayer.ui.label
 
 // Shared height for the sidebar's "SpacePlayer" header and the content column's category-title
 // row, so the two bottom-align across the Row's two independent Columns - see the mockup that
@@ -94,12 +96,6 @@ private fun LibraryCategory.iconRes(): Int = when (this) {
     LibraryCategory.IMPORT -> R.drawable.ic_nav_import
 }
 
-private fun Projection.filterLabel(): String = when (this) {
-    Projection.FLAT -> "平面"
-    Projection.HEMISPHERE_180 -> "180°"
-    Projection.SPHERE_360 -> "360°"
-}
-
 @Composable
 fun MainLibraryScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -114,12 +110,18 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
     val historyStore: PlaybackHistoryStore = GlobalContext.get().get()
     var selectedEnvironment by remember { mutableStateOf(Environment.CINEMA) }
 
+    // Resolved here (composable scope) rather than inline in the launcher callback below, since
+    // that callback runs outside of composition when the activity result arrives and can't call
+    // stringResource() directly.
+    val importedVideoDefaultName = stringResource(R.string.library_imported_video_default_name)
+
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
         if (uri != null) {
             context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            val documentName = DocumentFile.fromSingleUri(context, uri)?.name ?: "导入的视频"
+            val documentName = DocumentFile.fromSingleUri(context, uri)?.name
+                ?: importedVideoDefaultName
             libraryViewModel.selectItem(
                 libraryViewModel.toVideoItem(
                     RawVideoRecord(uri = uri, displayName = documentName, durationMs = 0L, sizeBytes = 0L),
@@ -171,7 +173,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
             if (!hasVideoPermission) {
                 Column(modifier = Modifier.fillMaxSize().padding(32.dp)) {
                     Text(
-                        text = "SpacePlayer 需要访问本机视频的权限才能显示视频库",
+                        text = stringResource(R.string.library_permission_rationale),
                         color = SpacePlayerTextPrimary,
                         style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
                     )
@@ -183,7 +185,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         ),
                     ) {
                         Text(
-                            text = "去授权",
+                            text = stringResource(R.string.library_grant_permission),
                             color = SpacePlayerOnAccent,
                             style = PicoTheme.typography.titleLarge.copy(fontSize = 20.sp),
                         )
@@ -248,7 +250,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                 },
                                 content = {
                                     Text(
-                                        text = category.label,
+                                        text = category.label(),
                                         style = PicoTheme.typography.bodyLarge.copy(fontSize = 18.sp),
                                     )
                                 },
@@ -284,7 +286,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                 tint = SpacePlayerAccent,
                             )
                             Text(
-                                text = "其它 · 选择文件",
+                                text = stringResource(R.string.library_import_action),
                                 color = SpacePlayerAccent,
                                 style = PicoTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                                 modifier = Modifier.padding(start = 8.dp),
@@ -305,7 +307,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         verticalAlignment = Alignment.Bottom,
                     ) {
                         Text(
-                            text = libraryViewModel.selectedCategory.label,
+                            text = libraryViewModel.selectedCategory.label(),
                             color = SpacePlayerTextPrimary,
                             style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
                         )
@@ -313,7 +315,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         Spacer(modifier = Modifier.weight(1f))
 
                         ToggleableChip(
-                            label = { Text("全部") },
+                            label = { Text(stringResource(R.string.library_filter_all)) },
                             isToggleOn = libraryViewModel.formatFilter == null,
                             onClick = { libraryViewModel.selectFormatFilter(null) },
                             colors = filterChipColors,
@@ -321,7 +323,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         )
                         Projection.entries.forEach { candidate ->
                             ToggleableChip(
-                                label = { Text(candidate.filterLabel()) },
+                                label = { Text(candidate.label()) },
                                 isToggleOn = libraryViewModel.formatFilter == candidate,
                                 onClick = { libraryViewModel.selectFormatFilter(candidate) },
                                 colors = filterChipColors,

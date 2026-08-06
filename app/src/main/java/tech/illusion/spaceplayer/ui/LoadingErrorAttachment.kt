@@ -6,12 +6,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.foundation.material.backgroundMaterial
 import com.pico.spatial.ui.platform.Material
+import tech.illusion.spaceplayer.R
 import tech.illusion.spaceplayer.playback.PlaybackState
 
 @Composable
@@ -25,10 +27,12 @@ fun LoadingErrorAttachment(state: PlaybackState) {
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = when (state) {
-                    PlaybackState.ERROR -> "视频加载失败"
-                    else -> "加载中…"
-                },
+                text = stringResource(
+                    when (state) {
+                        PlaybackState.ERROR -> R.string.playback_load_failed
+                        else -> R.string.playback_loading
+                    },
+                ),
                 color = PicoTheme.colorScheme.labelPrimary,
                 style = PicoTheme.typography.titleLarge.copy(fontSize = 32.sp),
             )

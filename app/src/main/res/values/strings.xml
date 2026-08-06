@@ -1,4 +1,48 @@
 <resources>
     <string name="app_name">SpacePlayer</string>
-    <string name="hello">Hello, Spatial SDK！</string>
+
+    <string name="projection_flat">Flat</string>
+    <string name="projection_180">180°</string>
+    <string name="projection_360">360°</string>
+
+    <string name="stereo_mono">Mono</string>
+    <string name="stereo_sbs_full">Side-by-side 3D</string>
+    <string name="stereo_tb_full">Top-bottom 3D</string>
+    <string name="stereo_mvhevc">MV-HEVC</string>
+    <string name="stereo_sbs_badge">SBS</string>
+    <string name="stereo_tb_badge">TB</string>
+
+    <string name="format_source_container">Container detection</string>
+    <string name="format_source_filename">Filename detection</string>
+    <string name="format_source_manual">Manual override</string>
+    <string name="format_source_default">Default fallback</string>
+
+    <string name="library_category_library">Library</string>
+    <string name="library_category_downloads">Downloads</string>
+    <string name="library_category_history">History</string>
+    <string name="library_category_import">Other</string>
+    <string name="library_import_action">Other · Choose file</string>
+    <string name="library_imported_video_default_name">Imported video</string>
+    <string name="library_permission_rationale">SpacePlayer needs access to your local videos to show the library</string>
+    <string name="library_grant_permission">Grant access</string>
+    <string name="library_filter_all">All</string>
+    <string name="library_start_playback">Start playback</string>
+
+    <string name="format_popup_title">Fix format</string>
+    <string name="subtitle_status_set">Subtitle: set</string>
+    <string name="subtitle_status_unset">Subtitle: not set</string>
+    <string name="subtitle_pick_file">Choose subtitle file</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_confirm">OK</string>
+
+    <string name="environment_cinema">Cinema</string>
+    <string name="environment_starry_sky">Starry sky</string>
+    <string name="environment_seaside">Seaside</string>
+
+    <string name="playback_pause">Pause</string>
+    <string name="playback_play">Play</string>
+    <string name="playback_panorama_auto_immersive">Panoramic video · Auto immersive</string>
+    <string name="playback_return_to_main_window">Return to main window</string>
+    <string name="playback_loading">Loading…</string>
+    <string name="playback_load_failed">Video failed to load</string>
 </resources>

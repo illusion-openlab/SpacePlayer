@@ -1,7 +1,9 @@
 package tech.illusion.spaceplayer.playback
 
-enum class Environment(val assetPath: String, val label: String) {
-    CINEMA("skyboxes/cinema_skybox.jpg", "电影院"),
-    STARRY_SKY("skyboxes/starry_skybox.jpg", "星空"),
-    SEASIDE("skyboxes/seaside_skybox.jpg", "海景"),
+// User-facing label lives in ui/Labels.kt (Environment.label()) - a stored String field here
+// would be a fixed Chinese literal baked into the enum, not locale-aware.
+enum class Environment(val assetPath: String) {
+    CINEMA("skyboxes/cinema_skybox.jpg"),
+    STARRY_SKY("skyboxes/starry_skybox.jpg"),
+    SEASIDE("skyboxes/seaside_skybox.jpg"),
 }

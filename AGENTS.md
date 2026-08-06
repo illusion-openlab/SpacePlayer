@@ -169,6 +169,30 @@ bug，最后靠 `adb shell uiautomator dump` 直接看到"其它"那个 View 的
 "没在动"，不能仅凭这一点就断定是合成器冻结——冻结的正确判定是"重启后依然相同"，否则可能是真 bug 被误判成
 环境问题，反而错过了真正的根因。
 
+**中英文国际化（2026-08-06）**：把全部用户可见文案迁到 Android 标准字符串资源，`res/values/strings.xml`
+是英文默认（fallback），`res/values-zh/strings.xml` 是中文覆盖（`app_name` 是专有名词，两边共用默认值，
+`values-zh` 里没有重复定义）。枚举的 label 函数（`Projection`/`StereoMode`/`FormatSource`/`Environment`/
+`LibraryCategory`）之前分散成好几份：`Projection.label()` 在 `FormatCorrectionPopup.kt`/
+`VideoGridCard.kt`/`MainLibraryScreen.kt`（叫 `filterLabel()`）里各写了一份完全相同的映射，
+`Environment`/`LibraryCategory` 则是把中文文案直接塞进枚举构造参数（`val label: String`）——这两种写法都
+没法做到"跟随语言环境"，所以趁这次改造：
+- 新建 `ui/Labels.kt`，把这些 label 统一成 `@Composable` 扩展函数，内部走 `stringResource()`，同一个枚举
+  只有一份权威实现，三份重复的 `Projection.label()` 全部删掉改成引用共享函数。
+- `Environment`/`LibraryCategory` 枚举本身去掉 `label: String` 构造参数（固定中文字面量没法本地化），
+  改成纯值枚举，label 完全交给 `ui/Labels.kt`。
+- `StereoMode` 拆成两个函数而不是合并成一个：`badgeLabel()`（网格卡片用的紧凑缩写 SBS/TB/MV-HEVC）和
+  `fullLabel()`（格式修正弹层 `SegmentControl` 用的完整描述"左右 3D"/"上下 3D"）——这两处本来就是不同的
+  UI 用途，业务含义不同，不应该被"去重"合并成一个。
+- 有一处不能直接在使用点调用 `stringResource()`：`MainLibraryScreen.kt` 里 SAF 导入视频取不到文件名时的
+  兜底显示名（"导入的视频"），这段逻辑在 `rememberLauncherForActivityResult` 的回调 lambda 里，这个
+  回调在 Activity Result 真正返回时才执行，已经脱离了组合（composition）上下文，不能调用 `stringResource()`——
+  提前在 Composable 函数体里解析成 `val importedVideoDefaultName = stringResource(...)`，回调里直接引用
+  这个已解析好的局部变量（闭包捕获，没有跨组合调用的问题）。
+- 验证用了 `adb shell cmd locale set-app-locales <pkg> --locales zh-CN`（Android 13+ 的按应用切语言
+  命令）而不是切整机系统语言——不需要重启设备，也不会影响这台模拟器上其它已装应用或系统语言，切完记得再
+  `set-app-locales <pkg> --locales ""` 清空覆盖，避免影响下次会话。中英文都截图/`uiautomator dump`
+  核对过主界面和格式修正弹层的全部文案。
+
 ## 为什么这么设计
 
 - 单一 `DefaultWindowContainer`（占位主窗口，选测试用例用）+ 单一共享 `Stage(id = "ImmersiveStage")`：见设计稿
@@ -442,6 +466,18 @@ bug，最后靠 `adb shell uiautomator dump` 直接看到"其它"那个 View 的
 - `ui/ImmersiveScene.kt`（改）— 加了字幕 `AttachmentPanel`，`update` 块里每帧算 `deltaTime`、调
   `applySubtitleFollow`；字幕实体给了一个固定兜底 `TransformComponent` 位置（模拟器上 `HMDTrackingProvider`
   拿不到真实姿态时的可见性保底，见上面的坑）。
+
+### 中英文国际化新增/改动文件（2026-08-06）
+
+- `res/values/strings.xml` — 英文默认（fallback）字符串资源。
+- `res/values-zh/strings.xml` — 中文覆盖，键名跟默认文件一一对应，`app_name` 除外（专有名词不重复定义）。
+- `ui/Labels.kt`（新增）— `Projection`/`StereoMode`/`FormatSource`/`Environment`/`LibraryCategory` 的
+  共享 `@Composable` label 扩展函数，取代原来分散在三个文件里的重复实现。
+- `playback/Environment.kt`（改）— 去掉 `label: String` 构造参数，只剩 `assetPath`。
+- `ui/library/LibraryCategory.kt`（改）— 去掉 `label: String` 构造参数，变成纯值枚举。
+- `ui/library/MainLibraryScreen.kt`/`VideoGridCard.kt`/`LibraryBottomBar.kt`/`FormatCorrectionPopup.kt`/
+  `ui/PlaybackHud.kt`/`ui/LoadingErrorAttachment.kt`（改）— 硬编码中文字符串全部换成 `stringResource(R.string.xxx)`
+  或 `ui/Labels.kt` 里的共享 label 函数。
 
 ## 已用的 Spatial SDK 能力
 

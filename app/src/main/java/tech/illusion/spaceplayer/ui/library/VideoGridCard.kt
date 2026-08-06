@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pico.spatial.ui.design.Badge
@@ -43,34 +44,14 @@ import kotlinx.coroutines.withContext
 import tech.illusion.spaceplayer.R
 import tech.illusion.spaceplayer.library.FormatSource
 import tech.illusion.spaceplayer.library.VideoItem
-import tech.illusion.spaceplayer.playback.Projection
-import tech.illusion.spaceplayer.playback.StereoMode
+import tech.illusion.spaceplayer.ui.badgeLabel
+import tech.illusion.spaceplayer.ui.label
 
 private const val THUMBNAIL_SIZE_PX = 480
 
 // Reserves enough height for title + metadata + the optional "修正格式" line so cards in the same
 // grid row line up evenly regardless of whether a given item shows that third line.
 private val INFO_BLOCK_MIN_HEIGHT = 96.dp
-
-private fun Projection.label(): String = when (this) {
-    Projection.FLAT -> "平面"
-    Projection.HEMISPHERE_180 -> "180°"
-    Projection.SPHERE_360 -> "360°"
-}
-
-private fun StereoMode.label(): String? = when (this) {
-    StereoMode.MONO -> null
-    StereoMode.SIDE_BY_SIDE -> "SBS"
-    StereoMode.TOP_AND_DOWN -> "TB"
-    StereoMode.MULTIVIEW_MVHEVC -> "MV-HEVC"
-}
-
-private fun FormatSource.label(): String = when (this) {
-    FormatSource.DETECTED_CONTAINER -> "容器探测"
-    FormatSource.DETECTED_FILENAME -> "文件名识别"
-    FormatSource.MANUAL_OVERRIDE -> "手动指定"
-    FormatSource.DEFAULT -> "默认兜底"
-}
 
 private fun formatDuration(durationMs: Long): String {
     val totalSeconds = durationMs / 1000
@@ -144,7 +125,7 @@ fun VideoGridCard(
                     .align(Alignment.TopStart)
                     .padding(8.dp),
             ) {
-                val stereoLabel = item.stereoMode.label()
+                val stereoLabel = item.stereoMode.badgeLabel()
                 Badge(
                     badgeColor = BadgeDefaults.badgeColors(
                         backgroundColor = item.projection.badgeColor(),
@@ -213,7 +194,7 @@ fun VideoGridCard(
             if (item.formatSource == FormatSource.DEFAULT) {
                 val correctionInteractionSource = remember { MutableInteractionSource() }
                 Text(
-                    text = "修正格式",
+                    text = stringResource(R.string.format_popup_title),
                     color = SpacePlayerAccent,
                     style = PicoTheme.typography.bodySmall.copy(fontSize = 12.sp),
                     modifier = Modifier

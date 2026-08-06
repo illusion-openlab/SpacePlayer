@@ -1,8 +1,10 @@
 package tech.illusion.spaceplayer.ui.library
 
-enum class LibraryCategory(val label: String) {
-    LIBRARY("视频资源库"),
-    DOWNLOADS("下载"),
-    HISTORY("历史"),
-    IMPORT("其它"),
+// User-facing label lives in ui/Labels.kt (LibraryCategory.label()) - a stored String field here
+// would be a fixed Chinese literal baked into the enum, not locale-aware.
+enum class LibraryCategory {
+    LIBRARY,
+    DOWNLOADS,
+    HISTORY,
+    IMPORT,
 }

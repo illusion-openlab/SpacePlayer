@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pico.spatial.ui.design.Button
@@ -19,21 +20,11 @@ import com.pico.spatial.ui.design.SegmentControl
 import com.pico.spatial.ui.design.SegmentItem
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.design.windows.SpatialPopup
+import tech.illusion.spaceplayer.R
 import tech.illusion.spaceplayer.playback.Projection
 import tech.illusion.spaceplayer.playback.StereoMode
-
-private fun Projection.label() = when (this) {
-    Projection.FLAT -> "平面"
-    Projection.HEMISPHERE_180 -> "180°"
-    Projection.SPHERE_360 -> "360°"
-}
-
-private fun StereoMode.label() = when (this) {
-    StereoMode.MONO -> "单目"
-    StereoMode.SIDE_BY_SIDE -> "左右 3D"
-    StereoMode.TOP_AND_DOWN -> "上下 3D"
-    StereoMode.MULTIVIEW_MVHEVC -> "MV-HEVC"
-}
+import tech.illusion.spaceplayer.ui.fullLabel
+import tech.illusion.spaceplayer.ui.label
 
 @Composable
 fun FormatCorrectionPopup(
@@ -50,7 +41,7 @@ fun FormatCorrectionPopup(
     SpatialPopup(onDismissRequest = onDismissRequest) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "修正格式",
+                text = stringResource(R.string.format_popup_title),
                 color = PicoTheme.colorScheme.labelPrimary,
                 style = PicoTheme.typography.titleLarge.copy(fontSize = 20.sp),
             )
@@ -75,7 +66,7 @@ fun FormatCorrectionPopup(
                         onClick = { stereoMode = candidate },
                         title = {
                             Text(
-                                text = candidate.label(),
+                                text = candidate.fullLabel(),
                                 style = PicoTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                             )
                         },
@@ -88,13 +79,15 @@ fun FormatCorrectionPopup(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    text = if (hasSubtitle) "字幕：已设置" else "字幕：未设置",
+                    text = stringResource(
+                        if (hasSubtitle) R.string.subtitle_status_set else R.string.subtitle_status_unset,
+                    ),
                     color = PicoTheme.colorScheme.labelSecondary,
                     style = PicoTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                 )
                 Button(onClick = onPickSubtitle) {
                     Text(
-                        text = "选择字幕文件",
+                        text = stringResource(R.string.subtitle_pick_file),
                         style = PicoTheme.typography.bodyLarge.copy(fontSize = 16.sp),
                     )
                 }
@@ -106,10 +99,16 @@ fun FormatCorrectionPopup(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Button(onClick = onDismissRequest) {
-                    Text(text = "取消", style = PicoTheme.typography.bodyLarge.copy(fontSize = 16.sp))
+                    Text(
+                        text = stringResource(R.string.action_cancel),
+                        style = PicoTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                    )
                 }
                 Button(onClick = { onConfirm(projection, stereoMode) }) {
-                    Text(text = "确定", style = PicoTheme.typography.bodyLarge.copy(fontSize = 16.sp))
+                    Text(
+                        text = stringResource(R.string.action_confirm),
+                        style = PicoTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                    )
                 }
             }
         }
