@@ -142,6 +142,33 @@ teal/purple 徽标）；因为窗口根节点本来就是固定色覆盖系统�
    前后不一致（`final_tomato_crop.png` 那批用的裁剪框比之前 `warm_02_crop.png` 那批宽很多、缩放倍数更低），
    不是应用本身的问题。
 
+**画板三处细节调整落地（2026-08-06）**：用户看着 `mcp__visualize` 的最终配色画板，提了三点具体调整——"其它"要在
+侧栏最下边、"开始播放"那一栏要在内容区最下边、"SpacePlayer"要更大且跟"视频资源库"底部对齐——要求应用到真实代码。
+"开始播放"那一栏在真实 Compose 代码里其实已经是靠 `weight(1f)` 的网格 Box 撑到最下边了（画板是简化的 HTML，没有
+体现这一点，代码不用改）。真正要动的是另外两处：
+
+1. **"其它"移出 `SideNavigation` 的 `content` 插槽**，包进一个新的外层 `Column(Modifier.fillMaxHeight())`，
+   `SideNavigation` 和"其它"之间插一个 `Spacer(Modifier.weight(1f))` 才能把"其它"推到侧栏最下面——
+   `SideNavigation` 自己内部那层可滚动 Column 只会包裹内容高度，在它的 `content` 里塞一个 `weight()` 的 Spacer
+   完全不起作用（父级没有约束高度可分配）。
+2. **"SpacePlayer"和"视频资源库"分别包进等高（56dp）的 `Box(contentAlignment = Alignment.BottomStart)`**，
+   两侧 Column 顶部再对齐同一个 padding（16dp），字号从 22sp 提到 28sp——两栏是完全独立的 Compose 子树，
+   要视觉对齐只能靠"给两边相同的起始偏移 + 相同高度的容器 + 底部对齐"这套笨办法，没有跨子树的"共享基线"API。
+
+**踩的坑（真机/模拟器都要小心）**：把"其它"从 `SideNavigation.content` 挪到外层普通 `Column` 后，第一版
+忘记给这个新 Column 设置宽度——`SideNavigation` 自己内部有 `Modifier.width(IntrinsicSize.Min)` 把自己限制在
+内容需要的宽度，但外层这个新 Column 没有任何宽度约束，导致"其它"Box 的 `fillMaxWidth()` 直接撑满了**整个
+Row 的宽度**（不再是侧栏那一小条），把右边内容列表挤没了——症状是应用整个内容区域完全空白（标题、网格、
+筛选栏全部不见），但 `adb logcat` 一条异常都没有（不是崩溃，是布局挤压），排查时一度怀疑是模拟器画面合成器
+卡死（见上面"连续快速重装拖死合成器"那条坑）——用 `md5` 比对了两张间隔几秒的截图，确实字节完全相同，但**做了
+一次完整的 `pico-cli emulator stop`/`start` 重启后 MD5 还是不变**，这才排除"合成器冻结"、确认是真实的布局
+bug，最后靠 `adb shell uiautomator dump` 直接看到"其它"那个 View 的 bounds 横跨了整个屏幕宽度才定位到根因。
+修复：给外层 Column 显式 `Modifier.width(220.dp)`。**教训**：把一个 UI 元素从某个内置组件的插槽（这类插槽通常
+自带宽度/高度约束）搬到普通 `Column`/`Row` 里时，原来隐式生效的约束会跟着消失，`fillMaxWidth()`/`fillMaxHeight()`
+的实际含义会变，必须显式补回等价约束，不能想当然认为"挪个位置不影响布局"；另外，"MD5 连续两次相同"只能说明
+"没在动"，不能仅凭这一点就断定是合成器冻结——冻结的正确判定是"重启后依然相同"，否则可能是真 bug 被误判成
+环境问题，反而错过了真正的根因。
+
 ## 为什么这么设计
 
 - 单一 `DefaultWindowContainer`（占位主窗口，选测试用例用）+ 单一共享 `Stage(id = "ImmersiveStage")`：见设计稿

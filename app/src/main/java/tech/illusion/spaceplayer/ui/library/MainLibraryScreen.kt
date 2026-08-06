@@ -15,9 +15,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -69,6 +72,20 @@ import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.Projection
 import tech.illusion.spaceplayer.ui.PlaybackViewModel
+
+// Shared height for the sidebar's "SpacePlayer" header and the content column's category-title
+// row, so the two bottom-align across the Row's two independent Columns - see the mockup that
+// asked for "SpacePlayer" to sit larger and bottom-aligned with "视频资源库".
+private val HEADER_ROW_HEIGHT = 56.dp
+
+// Matches the content Column's own Modifier.padding(16.dp) top inset, so both header rows start
+// from the same Y offset before bottom-aligning within HEADER_ROW_HEIGHT.
+private val HEADER_ROW_HEIGHT_PADDING = 16.dp
+
+// Fixed sidebar width - see the comment at its usage site for why this must be explicit now that
+// the "其它" action lives in a plain wrapping Column instead of inside SideNavigation's own
+// width-constrained content slot.
+private val SIDEBAR_WIDTH = 220.dp
 
 private fun LibraryCategory.iconRes(): Int = when (this) {
     LibraryCategory.LIBRARY -> R.drawable.ic_nav_library
@@ -176,56 +193,80 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
             }
 
             Row(modifier = Modifier.fillMaxSize()) {
-                SideNavigation(
-                    header = {
-                        Text(
-                            text = "SpacePlayer",
-                            color = SpacePlayerTextPrimary,
-                            style = PicoTheme.typography.titleLarge.copy(fontSize = 22.sp),
-                            modifier = Modifier.padding(bottom = 16.dp),
-                        )
-                    },
+                // Wraps SideNavigation plus the "其它" action so the latter can be pinned to the
+                // very bottom of the sidebar via a weighted Spacer - SideNavigation's own internal
+                // content column only wraps its content height, so a Spacer(weight) placed inside
+                // its content lambda would have no bounded height to distribute against. A fixed
+                // width is required here: without it this Column has no width constraint of its
+                // own, so the "其它" box's fillMaxWidth() below expands to the *entire Row's*
+                // width instead of just the sidebar's, squeezing the content column on the right
+                // down to nothing (confirmed via a blank content area + uiautomator dump showing
+                // that box's bounds spanning the full screen width).
+                Column(
+                    modifier = Modifier
+                        .width(SIDEBAR_WIDTH)
+                        .fillMaxHeight()
+                        .padding(top = HEADER_ROW_HEIGHT_PADDING),
                 ) {
-                    LibraryCategory.entries.filter { it != LibraryCategory.IMPORT }.forEach { category ->
-                        val categoryInteractionSource = remember(category) { MutableInteractionSource() }
-                        SideNavigationItem(
-                            selected = libraryViewModel.selectedCategory == category,
-                            colors = SideNavigationItemDefaults.colors(
-                                unselectedContentColor = SpacePlayerTextSecondary,
-                                unselectedContainerColor = Color.Transparent,
-                                selectedContentColor = SpacePlayerTextPrimary,
-                                selectedContainerColor = SpacePlayerSurfaceSelected,
-                            ),
-                            modifier = Modifier
-                                .padding(bottom = 4.dp)
-                                .clickable(
-                                    interactionSource = categoryInteractionSource,
-                                    indication = LocalIndication.current,
-                                    onClick = { libraryViewModel.selectCategory(category) },
-                                )
-                                .controllerHapticFeedback(interactionSource = categoryInteractionSource),
-                            leading = {
-                                Icon(
-                                    painter = painterResource(id = category.iconRes()),
-                                    contentDescription = null,
-                                )
-                            },
-                            content = {
+                    SideNavigation(
+                        header = {
+                            Box(
+                                modifier = Modifier.height(HEADER_ROW_HEIGHT),
+                                contentAlignment = Alignment.BottomStart,
+                            ) {
                                 Text(
-                                    text = category.label,
-                                    style = PicoTheme.typography.bodyLarge.copy(fontSize = 18.sp),
+                                    text = "SpacePlayer",
+                                    color = SpacePlayerTextPrimary,
+                                    style = PicoTheme.typography.titleLarge.copy(fontSize = 28.sp),
                                 )
-                            },
-                        )
+                            }
+                        },
+                    ) {
+                        LibraryCategory.entries.filter { it != LibraryCategory.IMPORT }.forEach { category ->
+                            val categoryInteractionSource = remember(category) { MutableInteractionSource() }
+                            SideNavigationItem(
+                                selected = libraryViewModel.selectedCategory == category,
+                                colors = SideNavigationItemDefaults.colors(
+                                    unselectedContentColor = SpacePlayerTextSecondary,
+                                    unselectedContainerColor = Color.Transparent,
+                                    selectedContentColor = SpacePlayerTextPrimary,
+                                    selectedContainerColor = SpacePlayerSurfaceSelected,
+                                ),
+                                modifier = Modifier
+                                    .padding(bottom = 4.dp)
+                                    .clickable(
+                                        interactionSource = categoryInteractionSource,
+                                        indication = LocalIndication.current,
+                                        onClick = { libraryViewModel.selectCategory(category) },
+                                    )
+                                    .controllerHapticFeedback(interactionSource = categoryInteractionSource),
+                                leading = {
+                                    Icon(
+                                        painter = painterResource(id = category.iconRes()),
+                                        contentDescription = null,
+                                    )
+                                },
+                                content = {
+                                    Text(
+                                        text = category.label,
+                                        style = PicoTheme.typography.bodyLarge.copy(fontSize = 18.sp),
+                                    )
+                                },
+                            )
+                        }
                     }
+
+                    Spacer(modifier = Modifier.weight(1f))
 
                     // "其它·选择文件" is a one-shot SAF trigger, not a persistent category - kept
                     // visually distinct (dashed outline) from the LIBRARY/DOWNLOADS/HISTORY tabs
-                    // above per the design mockup, rather than living in the same selectable list.
+                    // above, and pinned to the sidebar's bottom edge per the design mockup, rather
+                    // than living in the same selectable list.
                     val importInteractionSource = remember { MutableInteractionSource() }
                     Box(
                         modifier = Modifier
-                            .padding(top = 24.dp)
+                            .padding(horizontal = 24.dp)
+                            .padding(bottom = 20.dp)
                             .fillMaxWidth()
                             .dashedBorder(SpacePlayerAccent, RoundedCornerShape(12.dp))
                             .clickable(
@@ -260,8 +301,8 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         activeBackgroundColor = SpacePlayerAccent,
                     )
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().height(HEADER_ROW_HEIGHT),
+                        verticalAlignment = Alignment.Bottom,
                     ) {
                         Text(
                             text = libraryViewModel.selectedCategory.label,
