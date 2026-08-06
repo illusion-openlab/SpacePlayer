@@ -108,13 +108,7 @@ fun VideoGridCard(
         modifier = modifier
             .clip(shape)
             .background(SpacePlayerSurface)
-            .then(
-                if (selected) {
-                    Modifier.border(2.dp, SpacePlayerAccent, shape)
-                } else {
-                    Modifier
-                },
-            )
+            .border(if (selected) 2.dp else 1.dp, if (selected) SpacePlayerAccent else SpacePlayerBorder, shape)
             // No spatialHoverEffect here: this project's SDK (0.13.3) only exposes the low-level
             // SpatialHoverEffectRootScope block API for custom composables (no simple
             // enabled-flag overload), so this custom card relies on clickable's built-in

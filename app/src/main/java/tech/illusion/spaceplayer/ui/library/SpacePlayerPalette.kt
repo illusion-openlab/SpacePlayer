@@ -12,15 +12,16 @@ import tech.illusion.spaceplayer.playback.Projection
 // paints a fixed background (see MainLibraryScreen's opaque-root override), so every other color
 // in this screen is pinned too, rather than mixing fixed + system-adaptive colors that could clash
 // against a system dark theme.
-val SpacePlayerBackground = Color(0xFFFBF3E7).withVibrant(Vibrant.None) // design-style: fixed-figma-color window background
-val SpacePlayerSurface = Color(0xFFF3E2C9).withVibrant(Vibrant.None) // design-style: fixed-figma-color card surface
-val SpacePlayerSurfaceSelected = Color(0xFFF7E9D3).withVibrant(Vibrant.None) // design-style: fixed-figma-color selected surface
-val SpacePlayerTextPrimary = Color(0xFF3B2A1F).withVibrant(Vibrant.None) // design-style: fixed-figma-color text primary
-val SpacePlayerTextSecondary = Color(0xFF7A6650).withVibrant(Vibrant.None) // design-style: fixed-figma-color text secondary
-val SpacePlayerTextTertiary = Color(0xFFA6907A).withVibrant(Vibrant.None) // design-style: fixed-figma-color text tertiary
-val SpacePlayerAccent = Color(0xFFFF8A3D).withVibrant(Vibrant.None) // design-style: fixed-figma-color accent
-val SpacePlayerOnAccent = Color(0xFFFFF8EF).withVibrant(Vibrant.None) // design-style: fixed-figma-color on-accent text
-val SpacePlayerThumbnailPlaceholder = Color(0xFFD9C3A0).withVibrant(Vibrant.None) // design-style: fixed-figma-color thumbnail placeholder
+val SpacePlayerBackground = Color(0xFFFFFBF7).withVibrant(Vibrant.None) // design-style: fixed-figma-color window background (极浅暖白)
+val SpacePlayerSurface = Color(0xFFFFFFFF).withVibrant(Vibrant.None) // design-style: fixed-figma-color card surface
+val SpacePlayerSurfaceSelected = Color(0xFFFFF3EA).withVibrant(Vibrant.None) // design-style: fixed-figma-color selected surface
+val SpacePlayerBorder = Color(0xFFEEEAE0).withVibrant(Vibrant.None) // design-style: fixed-figma-color card border
+val SpacePlayerTextPrimary = Color(0xFF1A1A1A).withVibrant(Vibrant.None) // design-style: fixed-figma-color text primary
+val SpacePlayerTextSecondary = Color(0xFF5C5347).withVibrant(Vibrant.None) // design-style: fixed-figma-color text secondary
+val SpacePlayerTextTertiary = Color(0xFF8C8275).withVibrant(Vibrant.None) // design-style: fixed-figma-color text tertiary
+val SpacePlayerAccent = Color(0xFFE63946).withVibrant(Vibrant.None) // design-style: fixed-figma-color accent
+val SpacePlayerOnAccent = Color(0xFFFFFFFF).withVibrant(Vibrant.None) // design-style: fixed-figma-color on-accent text
+val SpacePlayerThumbnailPlaceholder = Color(0xFFF1EEE6).withVibrant(Vibrant.None) // design-style: fixed-figma-color thumbnail placeholder
 
 private val ProjectionNeutral = Color(0xFF8B7355).withVibrant(Vibrant.None) // design-style: fixed-figma-color format badge flat
 private val ProjectionTeal = Color(0xFF4C8577).withVibrant(Vibrant.None) // design-style: fixed-figma-color format badge 180
