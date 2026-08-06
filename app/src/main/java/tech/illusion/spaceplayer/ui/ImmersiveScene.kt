@@ -1,6 +1,7 @@
 package tech.illusion.spaceplayer.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.math.Vector3
@@ -10,9 +11,12 @@ import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
 import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
 import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
+import tech.illusion.spaceplayer.ecs.SubtitleFollowComponent
+import tech.illusion.spaceplayer.ecs.applySubtitleFollow
 
 private const val LOADING_ATTACHMENT_ID = "loading"
 private const val HUD_ATTACHMENT_ID = "hud"
+private const val SUBTITLE_ATTACHMENT_ID = "subtitle"
 
 @Composable
 fun ImmersiveScene() {
@@ -20,6 +24,8 @@ fun ImmersiveScene() {
     val viewModel: PlaybackViewModel = scope.get()
     val navigator = LocalSpatialNavigator.current
     val coroutineScope = rememberCoroutineScope()
+    val lastFrameNs = remember { longArrayOf(System.nanoTime()) }
+    val subtitleFollow = remember { SubtitleFollowComponent() }
 
     PicoTheme {
         SpatialView(
@@ -39,6 +45,9 @@ fun ImmersiveScene() {
                             coroutineScope.launch { navigator.closeStage() }
                         },
                     )
+                }
+                AttachmentPanel(id = SUBTITLE_ATTACHMENT_ID) {
+                    SubtitleAttachment(text = viewModel.currentSubtitleText)
                 }
             },
             initial = { content, attachments ->
@@ -67,10 +76,45 @@ fun ImmersiveScene() {
                     }
                     content.addEntity(this)
                 }
+
+                // Subtitle panel: position is driven every frame by applySubtitleFollow() in the
+                // update block below (lagged position + rotation follow, ported from StoryPico's
+                // MoveWithCameraComponent), not a fixed TransformComponent position like
+                // loading/hud - see ecs/SubtitleFollowComponent.kt. The fixed position set here is
+                // only a fallback for the frames before the first real HMD pose arrives (or for
+                // when HMDTrackingProvider.start() fails entirely, e.g. on the emulator, which
+                // lacks real head-pose tracking) - applySubtitleFollow() takes over as soon as
+                // hmdTrackingProvider.latestData is non-null.
+                //
+                // SubtitleFollowComponent is a plain Kotlin state holder, NOT registered through
+                // components.set() - the native ECS layer only recognizes its own built-in
+                // Component subtypes (TransformComponent, ModelComponent, ...) and silently
+                // rejects arbitrary custom ones ("component Component is not supported" in
+                // logcat), which would make a components.get() lookup in update{} return null
+                // every frame.
+                attachments.entity(SUBTITLE_ATTACHMENT_ID)?.apply {
+                    components[TransformComponent::class.java]?.apply {
+                        setPosition(Vector3(0f, 1.2f, -1.5f))
+                    }
+                    content.addEntity(this)
+                }
             },
             update = { _, attachments ->
                 attachments.entity(LOADING_ATTACHMENT_ID)?.enabled = viewModel.showLoadingOverlay
                 attachments.entity(HUD_ATTACHMENT_ID)?.enabled = !viewModel.showLoadingOverlay
+
+                val nowNs = System.nanoTime()
+                val deltaTime = ((nowNs - lastFrameNs[0]) / 1_000_000_000f).coerceIn(0f, 0.1f)
+                lastFrameNs[0] = nowNs
+
+                viewModel.refreshSubtitleText()
+                val subtitleEntity = attachments.entity(SUBTITLE_ATTACHMENT_ID)
+                val hmdPose = viewModel.hmdTrackingProvider.latestData?.hmdPose
+                if (subtitleEntity != null && hmdPose != null) {
+                    applySubtitleFollow(subtitleEntity, subtitleFollow, hmdPose, deltaTime)
+                }
+                subtitleEntity?.enabled =
+                    !viewModel.showLoadingOverlay && viewModel.currentSubtitleText.isNotEmpty()
             },
         )
     }
