@@ -507,6 +507,18 @@ B→HUD 正确显示 B 的进度条和 `0:06` 时长，logcat 无异常）。**�
    vsync/帧率节流、也可能是别的因素），如实记录为一个独立的、还没验证过的疑似问题，不要和这次修复的"进度条不
    刷新"混为一谈。
 
+**HUD 和画板对比色差太大——`PicoTheme.colorScheme` 的自适应角色在这个模拟器上没有读出预期的深色玻璃底
+（2026-08-06）**：进度条修好之后用户直接拿真机截图和 `mcp__visualize` 画板对比，反馈色差太大——画板设计的是
+深色（接近黑色）半透明玻璃底，配浅色高对比度文字/色块；模拟器上 `backgroundMaterial(true, Material.Regular)`
+实际渲染出来是纯色中灰底，不是深色玻璃。这台面板上原来给时间文字、环境 Chip 未选中态、进度条未填充轨道都用的
+是 `PicoTheme.colorScheme.labelSecondary`/`ChipsDefaults`/`SliderDefaults` 的自适应默认值——这套自适应色系统
+假设背景是深色，算出来的浅灰配色在真正的中灰底上对比度不够，"星空"/"海景" Chip 几乎融进背景里看不清。没有去
+深究"这个材质在这台模拟器上为什么没渲染出深色玻璃"（留了个开放问题，真机上是否会不一样目前不确定），而是直接
+在 `PlaybackHud.kt` 里给这几处加了固定色（`HudTrackColor`/`HudTimeTextColor`/`HudChipBackground`/
+`HudChipContent`/`HudLinkContent`，全部 `// design-style: fixed-figma-color` 标注，数值抄自已经批准的画板
+HTML 里的 rgba 值），不再依赖自适应系统去猜背景深浅——截图验证时间文字、Chip 背景、轨道线条都变得清晰可辨。
+背景玻璃材质本身没有动（用户之前明确说了"背景可以使用透明玻璃材质"，维持 `Material.Regular` 不变）。
+
 ## 关键文件
 
 - `Main.kt` — `DefaultWindowContainer { MainLibraryScreen(modifier = Modifier.windowConstraints(...)) }` +

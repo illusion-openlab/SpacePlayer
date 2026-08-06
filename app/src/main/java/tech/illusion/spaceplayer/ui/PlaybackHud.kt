@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -27,6 +28,7 @@ import com.pico.spatial.ui.design.Icon
 import com.pico.spatial.ui.design.IconButton
 import com.pico.spatial.ui.design.IconButtonDefaults
 import com.pico.spatial.ui.design.Link
+import com.pico.spatial.ui.design.LinkDefaults
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Slider
 import com.pico.spatial.ui.design.SliderDefaults
@@ -40,6 +42,19 @@ import tech.illusion.spaceplayer.playback.PlaybackState
 import tech.illusion.spaceplayer.ui.library.SpacePlayerAccent
 import tech.illusion.spaceplayer.ui.library.SpacePlayerOnAccent
 import tech.illusion.spaceplayer.ui.library.dotColor
+
+// This HUD floats over the video/skybox on top of a Material.Regular glass panel whose actual
+// rendered tone (how dark/translucent it really looks) varies by device and isn't something this
+// code controls - PicoTheme.colorScheme's adaptive roles assume a properly dark backdrop and read
+// as low-contrast when the glass renders lighter than that in practice (confirmed against the
+// approved mcp__visualize mockup, which specified these exact literal tones). Fixed instead of
+// adaptive, matching the mockup pixel-for-pixel rather than hoping the adaptive system guesses
+// the same tone the mockup did.
+private val HudTrackColor = Color(0x33FFFFFF) // design-style: fixed-figma-color HUD progress track
+private val HudTimeTextColor = Color(0x99FFFFFF) // design-style: fixed-figma-color HUD time label
+private val HudChipBackground = Color(0x1FFFFFFF) // design-style: fixed-figma-color HUD inactive chip bg
+private val HudChipContent = Color(0xB3FFFFFF) // design-style: fixed-figma-color HUD inactive chip text
+private val HudLinkContent = Color(0xB3FFFFFF) // design-style: fixed-figma-color HUD return-link text
 
 @Composable
 fun PlaybackHud(
@@ -87,6 +102,8 @@ fun PlaybackHud(
                     Spacer(modifier = Modifier.width(12.dp))
                     if (isFlatProjection) {
                         val envChipColors = ChipsDefaults.toggleableChipColors(
+                            contentColor = HudChipContent,
+                            backgroundColor = HudChipBackground,
                             activeContentColor = SpacePlayerOnAccent,
                             activeBackgroundColor = SpacePlayerAccent,
                         )
@@ -105,12 +122,15 @@ fun PlaybackHud(
                     } else {
                         Text(
                             text = stringResource(R.string.playback_panorama_auto_immersive),
-                            color = PicoTheme.colorScheme.labelSecondary,
+                            color = HudTimeTextColor,
                             style = PicoTheme.typography.bodyMedium,
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
-                    Link(onClick = onReturnToMainWindow) {
+                    Link(
+                        onClick = onReturnToMainWindow,
+                        colors = LinkDefaults.linkColors(contentColor = HudLinkContent),
+                    ) {
                         Text(text = stringResource(R.string.playback_return_to_main_window))
                     }
                 }
@@ -136,7 +156,7 @@ private fun PlaybackProgressRow(
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = formatPlaybackTimestamp(displayedPositionMs),
-            color = PicoTheme.colorScheme.labelSecondary,
+            color = HudTimeTextColor,
             style = PicoTheme.typography.bodySmall,
         )
         Spacer(modifier = Modifier.width(10.dp))
@@ -150,6 +170,7 @@ private fun PlaybackProgressRow(
             },
             sliderSpec = SliderDefaults.Small,
             colors = SliderDefaults.sliderColors(
+                trackColor = HudTrackColor,
                 progressColor = SpacePlayerAccent,
                 progressHighColor = SpacePlayerAccent,
                 thumbColor = SpacePlayerAccent,
@@ -159,7 +180,7 @@ private fun PlaybackProgressRow(
         Spacer(modifier = Modifier.width(10.dp))
         Text(
             text = formatPlaybackTimestamp(safeDurationMs),
-            color = PicoTheme.colorScheme.labelSecondary,
+            color = HudTimeTextColor,
             style = PicoTheme.typography.bodySmall,
         )
     }
