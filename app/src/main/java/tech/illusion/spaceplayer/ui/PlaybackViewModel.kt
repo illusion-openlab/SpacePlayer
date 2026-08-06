@@ -204,14 +204,14 @@ class PlaybackViewModel(
         }.getOrDefault(emptyList())
     }
 
-    /** Called every frame from ImmersiveScene's SpatialView.update block. */
-    fun refreshSubtitleText() {
-        currentSubtitleText = SubtitleCueLookup.textAt(subtitleCues, manager.player.getCurrentPosition())
-    }
-
-    /** Called every frame from ImmersiveScene's SpatialView.update block, drives the HUD's progress bar. */
-    fun refreshPlaybackProgress() {
-        currentPositionMs = manager.player.getCurrentPosition()
+    /** Called every frame from ImmersiveScene's per-frame LaunchedEffect loop - drives subtitle
+     * lookup and the HUD's progress bar from a single position read (CypressMediaPlayer's methods
+     * each hop through `runOnScheduleThread`'s `runBlocking`, so reading position twice per frame
+     * would double that per-frame block for no reason). */
+    fun refreshPlaybackFrame() {
+        val positionMs = manager.player.getCurrentPosition()
+        currentSubtitleText = SubtitleCueLookup.textAt(subtitleCues, positionMs)
+        currentPositionMs = positionMs
     }
 
     fun togglePlayPause() {
@@ -223,7 +223,7 @@ class PlaybackViewModel(
     }
 
     /** Assigns `currentPositionMs` immediately so the HUD thumb doesn't snap back for the one
-     * frame it takes `refreshPlaybackProgress()` to catch up with the player's real position. */
+     * frame it takes `refreshPlaybackFrame()` to catch up with the player's real position. */
     fun seekTo(ms: Long) {
         manager.seekTo(ms)
         currentPositionMs = ms

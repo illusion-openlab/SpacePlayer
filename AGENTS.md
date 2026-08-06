@@ -456,6 +456,57 @@ B→HUD 正确显示 B 的进度条和 `0:06` 时长，logcat 无异常）。**�
 本身作为"这个改动有问题"的证据——先看是不是踩了已知的模拟器重装/重启节流限制，重启一次模拟器拿到干净状态再复测，
 而不是急着回退一个有官方文档背书的正确修复。**
 
+**修复"进度条没有跟着走"——`SpatialView` 的 `update` 参数根本不是每帧循环（2026-08-06）**：这是这次会话里
+最重要的一条架构性发现，直接推翻了 Stage 1/3 沿用至今的一个错误假设。用户反馈进度条不走，先按
+`systematic-debugging` 流程走：
+
+1. 加日志排查时先撞见一个 ANR（"TossAR没有响应"）——根因是 `PlaybackHud` 的进度条给 `PlaybackViewModel` 加了
+   独立的 `refreshPlaybackProgress()`，和原有的 `refreshSubtitleText()` 一样都调
+   `manager.player.getCurrentPosition()`，等于每帧多了一次 `CypressMediaPlayer` 方法调用。反编译
+   `core-0.13.3-sources.jar` 的 `ThreadPool.kt` 确认 `runOnScheduleThread` 在非 Schedule 线程调用时是
+   `runBlocking(Schedule) { block() }`——真同步阻塞调用线程等 Schedule 线程处理完。把两个方法合并成一个
+   `refreshPlaybackFrame()`（只读一次 `getCurrentPosition()`，同时喂给字幕查找和进度条）解决了 ANR，
+   但进度条本身仍然没有动——说明加日志时先入为主的"两次阻塞调用撞了 ANR watchdog"只是压榨掉了一部分症状，
+   不是真正根因（系统性调试流程里"fix 不work 就退回 Phase 1"这条在这里救了一次）。
+2. 认真验证"进度条不动"这个症状本身时，用 `ffmpeg -f lavfi testsrc2=...:duration=60`（baseline profile + AAC +
+   faststart，同一套 Stage 1 就验证过能播的编码参数）造了一条 60 秒测试视频推到 `/sdcard/Movies/` 再
+   `MEDIA_SCANNER_SCAN_FILE` 广播一下让 MediaStore 收录——比反复用现成的 6 秒素材抢时间窗口靠谱得多。用视频
+   画面本身自带的时间戳叠加层（`testsrc2` 内置）和 HUD 上显示的时间对比，实锤：视频叠加层显示已经播到
+   `52.48s`，HUD 进度条的当前时间文字还停在 `0:00`——`currentPositionMs` 真的完全没刷新过，不是刷新慢。
+3. 加一个每次调用自增计数器 + 时间戳的日志（`Log.e`，最高优先级，排除日志级别过滤的可能）直接证实：
+   `refreshPlaybackFrame()`（连同它所在的整个 `update = { ... }` 代码块）**在一次完整的 60 秒播放过程里只被
+   调用了一次**，就是刚进入 PLAYING 状态那一刻，之后再也没被调用过。
+4. 反编译 `foundation-0.13.3-sources.jar` 里 `SpatialView.kt` 的真实实现（不是猜的）找到根因——它的 `update`
+   参数的 KDoc 原文："Every time the compose state which is read in this function changes, the update will be
+   invoked by the compose runtime. **Will be invoked once after initial is called.**" 这就是标准 Compose
+   `AndroidView(update = {...})` 的语义：`update` 只在初始化后调一次，之后只有当**这个 lambda 自己读取过的某个
+   Compose 状态**发生变化时才会再触发一次重组——**完全不是每帧渲染循环**，尽管它的参数名和用法（读 ECS
+   entity、传 `attachments`）看起来非常像一个 game-loop 回调。旧代码里 `update` 块读了
+   `viewModel.showLoadingOverlay`（依赖 `manager.state`/`hasFirstFrameRendered`），这两个值从 PREPARING 变到
+   PLAYING 时触发了唯一那一次调用——这也解释了为什么"loading 遮罩正确隐藏"和"HUD 正确显示"这两个纯粹靠状态翻转
+   一次就能做对的效果，从 Stage 1 到现在看起来一直"正常工作"：它们本来就只需要触发一次，从未依赖过真正的连续
+   循环，直到这次给进度条接了一个需要连续刷新才有意义的值，才把这个从 Stage 1 就存在的错误假设暴露出来。
+   **同样受影响、值得警惕的是字幕功能**——`refreshSubtitleText()`/`applySubtitleFollow()` 之前也挂在这个
+   `update` 块上，理论上同样只会执行一次，字幕的显示/隐藏时机和跟随位置在播放过程中大概率也没有真正持续刷新过，
+   只是 Stage 3 的验证没有测到"播过一个字幕时间窗口之后再继续检查"这种场景，没暴露出来（这条没有单独复测字幕，
+   但架构修复本身已经把它们一起迁到了真循环里）。
+5. 修复：`ImmersiveScene.kt` 新增一个独立的 `LaunchedEffect(Unit) { while (isActive) { withFrameNanos { ... } } }`
+   循环，把原来挂在 `update` 块上的连续性工作（`refreshPlaybackFrame()`、字幕跟随的 `applySubtitleFollow()`、
+   字幕面板可见性）整个搬进去——`withFrameNanos` 是 Compose 运行时自己的帧时钟（`Recomposer` 的
+   `AndroidUiFrameClock`，底层挂在 `Choreographer.postFrameCallback` 上），是 Compose 里做连续逐帧驱动
+   （动画、物理式插值）的标准写法，真正跟随显示器实际刷新率。`SpatialView` 的 `update` 块保留下来，但只留
+   `showLoadingOverlay` 驱动的 loading/HUD 可见性切换——这部分本来就是"状态变化触发一次"的正确用法，不需要连续
+   循环。`SpatialViewAttachments`（`update`/`initial` 参数类型）在 `initial` 里通过
+   `remember { mutableStateOf<SpatialViewAttachments?>(null) }` 存一份引用供 `LaunchedEffect` 循环读取——
+   反编译源码确认它是 `SpatialView` 内部 `remember { SpatialViewAttachmentsImpl() }` 出来的同一个长生命周期对象，
+   不是只在某次 `update`/`initial` 调用里才有效的临时值，可以安全跨越到独立的协程里持有。
+6. 验证：用上面那条 60 秒 `long_test.mp4`，选中播放后间隔几秒截两次图对比进度条——从 `0:01` 到 `0:51`，
+   随时间正确前进，时间文字和滑块位置同步更新。单测 48/48，`verify-design-style.sh` 0 错误 0 警告。
+   **另外发现一个和这条 bug 无关、但同一次测试里顺带撞见的现象**：视频画面自带时间戳显示的播放速度比真实挂钟
+   时间快很多（60 秒素材大约 9-10 秒挂钟时间就播完/自动返回主窗口）——没有深挖根因（可能是解码器不受
+   vsync/帧率节流、也可能是别的因素），如实记录为一个独立的、还没验证过的疑似问题，不要和这次修复的"进度条不
+   刷新"混为一谈。
+
 ## 关键文件
 
 - `Main.kt` — `DefaultWindowContainer { MainLibraryScreen(modifier = Modifier.windowConstraints(...)) }` +

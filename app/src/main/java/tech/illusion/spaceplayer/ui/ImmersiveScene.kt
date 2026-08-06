@@ -3,13 +3,19 @@ package tech.illusion.spaceplayer.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.math.Vector3
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.foundation.content.SpatialView
+import com.pico.spatial.ui.foundation.content.SpatialViewAttachments
 import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
 import tech.illusion.spaceplayer.MAIN_WINDOW_ID
@@ -27,8 +33,8 @@ fun ImmersiveScene() {
     val viewModel: PlaybackViewModel = scope.get()
     val navigator = LocalSpatialNavigator.current
     val coroutineScope = rememberCoroutineScope()
-    val lastFrameNs = remember { longArrayOf(System.nanoTime()) }
     val subtitleFollow = remember { SubtitleFollowComponent() }
+    var spatialAttachments by remember { mutableStateOf<SpatialViewAttachments?>(null) }
 
     fun returnToMainWindow() {
         viewModel.exitImmersive()
@@ -49,6 +55,34 @@ fun ImmersiveScene() {
     LaunchedEffect(viewModel.returnToMainWindowRequested) {
         if (viewModel.returnToMainWindowRequested) {
             returnToMainWindow()
+        }
+    }
+
+    // SpatialView's own `update` parameter is NOT a per-frame render loop, despite reading like
+    // one - its KDoc says it fires once after `initial`, then again only when a Compose state
+    // value read inside that lambda changes. Position polling, subtitle lookup, and the lagged
+    // subtitle-follow lerp all need a genuine continuous per-frame driver, so they run in their
+    // own coroutine here instead, paced by withFrameNanos (Compose's own frame clock, tied to the
+    // real display refresh). Confirmed via a frame counter: the old code (calling this from
+    // `update`) logged exactly one invocation total for an entire 60-second video playback.
+    LaunchedEffect(Unit) {
+        var lastFrameNs = withFrameNanos { it }
+        while (isActive) {
+            withFrameNanos { nowNs ->
+                val deltaTime = ((nowNs - lastFrameNs) / 1_000_000_000f).coerceIn(0f, 0.1f)
+                lastFrameNs = nowNs
+
+                viewModel.refreshPlaybackFrame()
+
+                val attachments = spatialAttachments ?: return@withFrameNanos
+                val subtitleEntity = attachments.entity(SUBTITLE_ATTACHMENT_ID)
+                val hmdPose = viewModel.hmdTrackingProvider.latestData?.hmdPose
+                if (subtitleEntity != null && hmdPose != null) {
+                    applySubtitleFollow(subtitleEntity, subtitleFollow, hmdPose, deltaTime)
+                }
+                subtitleEntity?.enabled =
+                    !viewModel.showLoadingOverlay && viewModel.currentSubtitleText.isNotEmpty()
+            }
         }
     }
 
@@ -76,6 +110,7 @@ fun ImmersiveScene() {
                 }
             },
             initial = { content, attachments ->
+                spatialAttachments = attachments
                 content.addEntity(viewModel.screenEntity)
                 content.addEntity(viewModel.sphereEntity)
                 content.addEntity(viewModel.hemisphereEntity)
@@ -103,20 +138,19 @@ fun ImmersiveScene() {
                 }
 
                 // Subtitle panel: position is driven every frame by applySubtitleFollow() in the
-                // update block below (lagged position + rotation follow, ported from StoryPico's
-                // MoveWithCameraComponent), not a fixed TransformComponent position like
-                // loading/hud - see ecs/SubtitleFollowComponent.kt. The fixed position set here is
-                // only a fallback for the frames before the first real HMD pose arrives (or for
-                // when HMDTrackingProvider.start() fails entirely, e.g. on the emulator, which
-                // lacks real head-pose tracking) - applySubtitleFollow() takes over as soon as
-                // hmdTrackingProvider.latestData is non-null.
+                // LaunchedEffect loop above (lagged position + rotation follow, ported from
+                // StoryPico's MoveWithCameraComponent), not a fixed TransformComponent position
+                // like loading/hud - see ecs/SubtitleFollowComponent.kt. The fixed position set
+                // here is only a fallback for the frames before the first real HMD pose arrives
+                // (or for when HMDTrackingProvider.start() fails entirely, e.g. on the emulator,
+                // which lacks real head-pose tracking) - applySubtitleFollow() takes over as soon
+                // as hmdTrackingProvider.latestData is non-null.
                 //
                 // SubtitleFollowComponent is a plain Kotlin state holder, NOT registered through
                 // components.set() - the native ECS layer only recognizes its own built-in
                 // Component subtypes (TransformComponent, ModelComponent, ...) and silently
                 // rejects arbitrary custom ones ("component Component is not supported" in
-                // logcat), which would make a components.get() lookup in update{} return null
-                // every frame.
+                // logcat), which would make a components.get() lookup return null every frame.
                 attachments.entity(SUBTITLE_ATTACHMENT_ID)?.apply {
                     components[TransformComponent::class.java]?.apply {
                         setPosition(Vector3(0f, 1.2f, -1.5f))
@@ -125,22 +159,12 @@ fun ImmersiveScene() {
                 }
             },
             update = { _, attachments ->
+                // Event-driven, not per-frame - this re-runs whenever showLoadingOverlay's own
+                // reads (manager.state / hasFirstFrameRendered) change, which is exactly when
+                // these two visibility flags need to flip. See the LaunchedEffect above for the
+                // genuinely-continuous per-frame work.
                 attachments.entity(LOADING_ATTACHMENT_ID)?.enabled = viewModel.showLoadingOverlay
                 attachments.entity(HUD_ATTACHMENT_ID)?.enabled = !viewModel.showLoadingOverlay
-
-                val nowNs = System.nanoTime()
-                val deltaTime = ((nowNs - lastFrameNs[0]) / 1_000_000_000f).coerceIn(0f, 0.1f)
-                lastFrameNs[0] = nowNs
-
-                viewModel.refreshSubtitleText()
-                viewModel.refreshPlaybackProgress()
-                val subtitleEntity = attachments.entity(SUBTITLE_ATTACHMENT_ID)
-                val hmdPose = viewModel.hmdTrackingProvider.latestData?.hmdPose
-                if (subtitleEntity != null && hmdPose != null) {
-                    applySubtitleFollow(subtitleEntity, subtitleFollow, hmdPose, deltaTime)
-                }
-                subtitleEntity?.enabled =
-                    !viewModel.showLoadingOverlay && viewModel.currentSubtitleText.isNotEmpty()
             },
         )
     }
