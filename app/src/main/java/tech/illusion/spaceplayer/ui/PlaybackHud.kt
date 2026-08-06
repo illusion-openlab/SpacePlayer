@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,6 +57,17 @@ private val HudTimeTextColor = Color(0x99FFFFFF) // design-style: fixed-figma-co
 private val HudChipBackground = Color(0x1FFFFFFF) // design-style: fixed-figma-color HUD inactive chip bg
 private val HudChipContent = Color(0xB3FFFFFF) // design-style: fixed-figma-color HUD inactive chip text
 private val HudLinkContent = Color(0xB3FFFFFF) // design-style: fixed-figma-color HUD return-link text
+private val HudDividerColor = Color(0x33FFFFFF) // design-style: fixed-figma-color HUD group divider
+
+// SpatialUI's own VerticalDivider is a one-line wrapper (Box(modifier.fillMaxHeight().width(t)
+// .background(color))) - no hover/click/haptics behavior to preserve - so a plain sized Box here
+// is equivalent, not a reimplementation, and sidesteps an observed inconsistency where the
+// built-in rendered visible in one spot of this Row but not the other (unresolved, but this Box
+// form measures/paints predictably either way).
+@Composable
+private fun HudDivider() {
+    Box(modifier = Modifier.width(1.dp).height(24.dp).background(HudDividerColor))
+}
 
 @Composable
 fun PlaybackHud(
@@ -81,14 +94,17 @@ fun PlaybackHud(
                     durationMs = durationMs,
                     onSeek = onSeek,
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     IconButton(
                         onClick = onPlayPause,
                         colors = IconButtonDefaults.iconButtonColors(
                             containerColor = SpacePlayerAccent,
                             contentColor = SpacePlayerOnAccent,
                         ),
-                        size = IconButtonDefaults.Small,
+                        size = IconButtonDefaults.Regular,
                     ) {
                         Icon(
                             painter = painterResource(
@@ -99,6 +115,8 @@ fun PlaybackHud(
                             ),
                         )
                     }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    HudDivider()
                     Spacer(modifier = Modifier.width(12.dp))
                     if (isFlatProjection) {
                         val envChipColors = ChipsDefaults.toggleableChipColors(
@@ -127,9 +145,14 @@ fun PlaybackHud(
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
+                    HudDivider()
+                    Spacer(modifier = Modifier.width(12.dp))
                     Link(
                         onClick = onReturnToMainWindow,
                         colors = LinkDefaults.linkColors(contentColor = HudLinkContent),
+                        trailingIcon = {
+                            Icon(painter = painterResource(id = R.drawable.ic_return), contentDescription = null)
+                        },
                     ) {
                         Text(text = stringResource(R.string.playback_return_to_main_window))
                     }

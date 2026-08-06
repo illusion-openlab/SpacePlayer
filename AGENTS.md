@@ -519,6 +519,31 @@ B→HUD 正确显示 B 的进度条和 `0:06` 时长，logcat 无异常）。**�
 HTML 里的 rgba 值），不再依赖自适应系统去猜背景深浅——截图验证时间文字、Chip 背景、轨道线条都变得清晰可辨。
 背景玻璃材质本身没有动（用户之前明确说了"背景可以使用透明玻璃材质"，维持 `Material.Regular` 不变）。
 
+**HUD 控制行宽度没对齐 + 缺分组分隔线（2026-08-06）**：用户直接甩回两张最早批准的 `mcp__visualize` 画板截图，
+指出"播放器宽度都没有对齐"，要求重新分析画板里每个元素的功能与位置关系。逐一对比后确认两个真问题：
+
+1. **宽度没对齐**：进度条那一行（时间文字+`Slider`+时间文字）天然由 `Slider` 的固定宽度撑开（约
+   312-336dp，见前面"进度条控制"那条记录），但按钮行的 `Row` 没加 `Modifier.fillMaxWidth()`——`Spacer(
+   Modifier.weight(1f))` 在一个没有宽度约束、纯靠内容撑开（wrap-content）的 `Row` 里没有可分配的剩余空间可用，
+   等于失效，"返回主窗口"就紧跟在环境 Chip 后面，而不是像画板那样贴在面板最右边。给按钮行的 `Row` 加
+   `Modifier.fillMaxWidth()` 后，`Column` 会先按最宽的子项（进度条行）确定自己的宽度，按钮行的
+   `fillMaxWidth()` 再撑到同一个宽度，`weight(1f)` 才有真正的剩余空间可分配——这是"非 fillMaxWidth 的 Column
+   包一个 fillMaxWidth 的 Row"这种常见 Compose 组合模式，不需要给两行都加 `fillMaxWidth()`。
+2. **画板明确画了分组分隔线**：`[播放/暂停]` | `[环境选择器 或 全景文案]` | `[返回]` 三组之间画板用了细竖线
+   分隔，原来的实现完全没有。补上 `VerticalDivider`（`com.pico.spatial.ui.design.Divider.kt`，内置组件）时
+   发现一个没深挖根因的怪现象：同一个 `Row` 里，两处用了完全相同的 `VerticalDivider(modifier =
+   Modifier.height(24.dp), color = ...)` 调用，播放按钮和 Chip 之间那处死活不渲染，环境组和返回按钮之间那处
+   却正常显示——反编译源码确认 `VerticalDivider` 内部实现就是 `Box(modifier.fillMaxHeight().width(thickness)
+   ).background(color)`，没有任何 hover/点击/触觉反馈之类值得保留的行为，索性直接用等价的
+   `Box().width(1.dp).height(24.dp).background(HudDividerColor)` 手写替代，两处都稳定显示——不是"重新发明"
+   内置组件，只是绕开了一个位置相关但没查出根因的渲染不一致。
+3. 顺带把画板里"返回"文字后面跟着的回退箭头图标也补上了（新建 `ic_return.xml`，同样是最简单的纯色矢量路径，
+   和 `ic_play_triangle.xml`/`ic_pause_bars.xml`风格一致）——`Link` 组件的真实签名只有 `trailingIcon`
+   没有 `leadingIcon`（反编译 `Link.kt` 确认），图标只能挂在"返回主窗口"文字后面，和画板"图标在文字前面"的
+   顺序不完全一致，但保留内置 `Link` 组件比手写一个匹配图标顺序的自定义按钮更值得，这个顺序差异属于可接受的
+   妥协。播放/暂停的 `IconButton` 尺寸也从 `.Small` 换成 `.Regular`，比例上更接近画板里明显更大的红色圆形按钮。
+   截图验证：两条分隔线清晰可见，"返回主窗口"贴到了和进度条行同宽的右边缘。
+
 ## 关键文件
 
 - `Main.kt` — `DefaultWindowContainer { MainLibraryScreen(modifier = Modifier.windowConstraints(...)) }` +
