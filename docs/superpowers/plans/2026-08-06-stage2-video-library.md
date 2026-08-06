@@ -1810,7 +1810,9 @@ git commit -m "Stage 2 Task 7: wire real VideoItem playback (PlaybackManager Uri
 - Consumes: `PlaybackHistoryStore`/`VideoPreferencesStore`（Task 3）。
 - Produces: 无新的对外签名——这个 Task 是把已有的 Store 接进已有的播放生命周期。
 
-- [ ] **Step 1: 改 `PlaybackManager.kt`——加一次性回调**
+- [x] **Step 1: 改 `PlaybackManager.kt`——加一次性回调**
+
+**实际结果**：和草稿一致。
 
 ```kotlin
 // PlaybackManager.kt 类体内新增：
@@ -1831,7 +1833,9 @@ git commit -m "Stage 2 Task 7: wire real VideoItem playback (PlaybackManager Uri
 
 （`if (!hasFirstFrameRendered)` 防止同一次播放里多次触发 `onVideoSizeChanged`——比如视频中途分辨率变化——导致历史被重复写入多次，虽然 `PlaybackHistoryStore` 本身用 uri 做 key 天然去重，多写几次也不会产生脏数据，但没必要每次分辨率变化都触发一次历史写入。）
 
-- [ ] **Step 2: 改 `di/PlaybackModule.kt`——`PlaybackViewModel` 构造参数加两个 Store**
+- [x] **Step 2: 改 `di/PlaybackModule.kt`——`PlaybackViewModel` 构造参数加两个 Store**
+
+**实际结果**：和草稿一致。
 
 ```kotlin
 package tech.illusion.spaceplayer.di
@@ -1856,7 +1860,9 @@ val playbackModule = module {
 
 注意：这里新增的 `VideoPreferencesStore` single 和 `LibraryViewModel`（Task 5，主窗口内 `remember` 持有）各自用同名 `SharedPreferences` 文件（`"video_preferences"`）但各自 new 了一个 `SharedPreferencesKeyValueStore` 实例——`SharedPreferences` 本身在同一个文件名下是进程内单例（`Context.getSharedPreferences` 返回的是同一个底层对象），所以两处分别持有的 `KeyValueStore` 实例读写的是同一份数据，不会不一致，但这确实是两套对象各管一份、没有共享同一个 `VideoPreferencesStore` 实例。这是可以接受的重复（`LibraryViewModel` 活在主窗口 Compose 树，`PlaybackViewModel` 活在 Koin session scope，两棵树本来就是分开的，Stage 1 就是这样设计的），先不为了去重这一点点重复而引入更复杂的跨容器共享。
 
-- [ ] **Step 3: 改 `PlaybackViewModel.kt`——构造参数 + 历史写入 + 偏好环境持久化**
+- [x] **Step 3: 改 `PlaybackViewModel.kt`——构造参数 + 历史写入 + 偏好环境持久化**
+
+**实际结果**：和草稿一致——`historyStore.recordPlayed(item.uri.toString(), ...)` 用 `String` key（Task 3 的真实发现，`PlaybackHistoryStore` 全程不碰 `Uri`）。
 
 ```kotlin
 // 类声明从：
@@ -1888,7 +1894,9 @@ class PlaybackViewModel(
 
 `System.currentTimeMillis()` 是这里唯一需要真实墙钟时间的地方——`PlaybackHistoryEntry.lastPlayedAt` 本来就该是真实时间戳，不是 workflow 脚本里被禁用的那个 `Date.now()`（这是普通 Kotlin/Android 代码，不受 workflow 脚本沙箱限制）。
 
-- [ ] **Step 4: 改 `MainLibraryScreen.kt`——"历史"分类读真实数据**
+- [x] **Step 4: 改 `MainLibraryScreen.kt`——"历史"分类读真实数据**
+
+**实际结果**：`recentEntriesDescending()` 返回 `List<Pair<String, Long>>`（uriKey to timestamp，Task 3 的真实发现），用 `it.uri.toString() == uriKey` 关联，不是草稿里写的 `entry.videoUri`/`PlaybackHistoryEntry`。
 
 ```kotlin
 // 顶部 import 追加：
@@ -1913,7 +1921,9 @@ val items = libraryViewModel.visibleItems(historyItems = historyItems)
 
 "历史"分类只能列出当前"视频资源库"/"下载"两个分类里已经查询到的视频（按 uri 关联），如果历史记录指向一个已经被删除/移出 MediaStore 扫描范围的文件，这里会被 `find` 静默过滤掉（返回 null 被 `mapNotNull` 丢弃）——这是合理行为，不应该在历史里展示一个已经不存在的文件。
 
-- [ ] **Step 5: 构建 + 单元测试**
+- [x] **Step 5: 构建 + 单元测试**
+
+**实际结果**：`BUILD SUCCESSFUL`，27 个单测全部 PASS。
 
 ```bash
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
@@ -1922,17 +1932,20 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 Expected: `BUILD SUCCESSFUL`，全部单测 PASS（`PlaybackHistoryStoreTest`/`VideoPreferencesStoreTest` 沿用 Task 3 已经验证过的纯逻辑，这里只是接线，不需要新增单测）。
 
-- [ ] **Step 6: 模拟器截图验证——播放一次后退出，确认"历史"分类出现该视频，且下次选中同一视频时环境预选正确**
+- [x] **Step 6: 验证——播放一次后退出，确认历史写入 + 偏好环境持久化真的生效**
 
-```bash
-pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
-pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
-for i in $(seq 1 6); do sleep 2; done
+**实际结果（验证手法比草稿更直接、更可靠）**：加了临时 `LaunchedEffect` 自动选中 `library_test.mp4`、以"海景"环境播放、`delay(6000)` 等首帧渲染完、`exitImmersive()` + `closeStage()`。截图确认退出后正常回到主窗口列表，无崩溃。
+
+**没有依赖"切到历史分类再截图看"这种要靠 adb tap 点动 spatial 容器的验证方式**（`adb tap` 对这类容器不可靠，Task 7 已经踩过一次坑）——改用 `adb shell run-as tech.illusion.spaceplayer cat .../shared_prefs/*.xml` 直接读底层 `SharedPreferences` 文件，这是比截图更直接、更不会被"看起来对但其实没触发"误导的证据：
+
+```
+playback_history.xml:  content://media/external/video/media/21 = 1785983160752   （真实 uri + 真实时间戳）
+video_preferences.xml: content://media/external/video/media/21 = environment=SEASIDE
 ```
 
-用 Task 7 Step 9 同样的"临时 `LaunchedEffect` 自动触发选中+播放+等待+退出"手法（选一个环境比如"星空"、播放、等待首帧渲染、退出），退出后切到"历史"分类截图确认该视频出现；再次选中同一视频，确认 `LibraryBottomBar` 的环境选择器默认高亮显示上次选的"星空"（`item.preferredEnvironment` 从 `VideoPreferencesStore` 读回来了）。验证完删除临时代码，重新构建确认干净。
+两条记录都命中同一个真实 `content://` Uri，值也符合预期（时间戳是调用时刻的真实毫秒数，环境是临时代码里指定的 `SEASIDE`），证明 `historyStore.recordPlayed`（首帧渲染时触发）和 `preferencesStore.setPreferredEnvironment`（退出时触发）两条代码路径都真的执行了，不是"界面看起来没崩溃就当作成功"。验证完删除临时代码，重新 `./gradlew clean assembleDebug :app:testDebugUnitTest` 确认干净、27 个单测依旧全部 PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/playback/PlaybackManager.kt \

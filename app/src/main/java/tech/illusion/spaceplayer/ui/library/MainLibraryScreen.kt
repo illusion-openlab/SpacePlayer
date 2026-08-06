@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
 import tech.illusion.spaceplayer.IMMERSIVE_STAGE_ID
 import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
+import tech.illusion.spaceplayer.library.PlaybackHistoryStore
 import tech.illusion.spaceplayer.library.RawVideoRecord
 import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.playback.Environment
@@ -55,6 +56,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
     val coroutineScope = rememberCoroutineScope()
     val playbackScope = GlobalContext.get().getScope(PLAYBACK_SESSION_SCOPE_ID)
     val playbackViewModel: PlaybackViewModel = playbackScope.get()
+    val historyStore: PlaybackHistoryStore = GlobalContext.get().get()
     var selectedEnvironment by remember { mutableStateOf(Environment.CINEMA) }
 
     val importLauncher = rememberLauncherForActivityResult(
@@ -139,7 +141,11 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                     color = PicoTheme.colorScheme.labelPrimary,
                     style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
                 )
-                val items = libraryViewModel.visibleItems(historyItems = emptyList())
+                val historyItems = historyStore.recentEntriesDescending().mapNotNull { (uriKey, _) ->
+                    (libraryViewModel.libraryItems + libraryViewModel.downloadsItems)
+                        .find { it.uri.toString() == uriKey }
+                }
+                val items = libraryViewModel.visibleItems(historyItems = historyItems)
                 LazyColumn(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     items(items = items, key = { it.uri }) { item ->
                         VideoListCard(

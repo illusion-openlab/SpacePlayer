@@ -25,6 +25,8 @@ class PlaybackManager(private val context: Context) {
     var hasFirstFrameRendered by mutableStateOf(false)
         private set
 
+    var onFirstFrameRendered: (() -> Unit)? = null
+
     private val callback = object : CypressMediaPlayerCallback {
         override fun onPrepared() {
             state = PlaybackState.READY
@@ -44,7 +46,10 @@ class PlaybackManager(private val context: Context) {
         }
         override fun onStopped() {}
         override fun onVideoSizeChanged(width: Int, height: Int) {
-            hasFirstFrameRendered = true
+            if (!hasFirstFrameRendered) {
+                hasFirstFrameRendered = true
+                onFirstFrameRendered?.invoke()
+            }
         }
         override fun onError(error: CypressMediaPlayerErrorCode) {
             Log.e(TAG, "onError code ${error.code}")

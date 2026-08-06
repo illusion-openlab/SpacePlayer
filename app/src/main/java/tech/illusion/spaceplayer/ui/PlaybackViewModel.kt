@@ -6,7 +6,9 @@ import com.pico.spatial.core.ecs.Entity
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.math.Vector3
 import tech.illusion.spaceplayer.ecs.PlaybackEntityAssembler
+import tech.illusion.spaceplayer.library.PlaybackHistoryStore
 import tech.illusion.spaceplayer.library.VideoItem
+import tech.illusion.spaceplayer.library.VideoPreferencesStore
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.PlaybackManager
 import tech.illusion.spaceplayer.playback.PlaybackState
@@ -24,7 +26,11 @@ const val ENVIRONMENT_SKYBOX_RADIUS_METERS = 20f
 private val CINEMA_SCREEN_POSITION = Vector3(0f, 1.6f, -4f)
 private val FLOATING_SCREEN_POSITION = Vector3(0f, 1.5f, -2f)
 
-class PlaybackViewModel(context: Context) {
+class PlaybackViewModel(
+    context: Context,
+    private val historyStore: PlaybackHistoryStore,
+    private val preferencesStore: VideoPreferencesStore,
+) {
     val manager = PlaybackManager(context)
     val screenEntity = Entity()
     val sphereEntity = Entity()
@@ -142,11 +148,18 @@ class PlaybackViewModel(context: Context) {
                 updateEnvironmentVisibility() // screenEntity is now disabled, so this turns all 3 off
             }
         }
+        manager.onFirstFrameRendered = {
+            historyStore.recordPlayed(item.uri.toString(), System.currentTimeMillis())
+        }
         manager.setup(item.uri)
         isImmersive.value = true
     }
 
     fun exitImmersive() {
+        val item = currentItem
+        if (item != null && isFlatProjection.value) {
+            preferencesStore.setPreferredEnvironment(item.uri, currentEnvironment.value)
+        }
         manager.pause()
         isImmersive.value = false
     }
