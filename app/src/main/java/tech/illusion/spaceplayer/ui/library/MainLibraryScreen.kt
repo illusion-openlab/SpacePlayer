@@ -42,11 +42,14 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import com.pico.spatial.ui.design.Button
+import com.pico.spatial.ui.design.ButtonDefaults
+import com.pico.spatial.ui.design.ChipsDefaults
 import com.pico.spatial.ui.design.Icon
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.ScrollIndicator
 import com.pico.spatial.ui.design.SideNavigation
 import com.pico.spatial.ui.design.SideNavigationItem
+import com.pico.spatial.ui.design.SideNavigationItemDefaults
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.design.ToggleableChip
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
@@ -63,13 +66,6 @@ import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.Projection
 import tech.illusion.spaceplayer.ui.PlaybackViewModel
-
-// Fixed dark background for the main window - the launcher <activity> has
-// pico.spatial.windowcontainer.materialbackground="0" (see AndroidManifest.xml), so this root is
-// the sole owner of this window's background; painting over the system glass here would be wrong,
-// but painting it after disabling the glass switch is the documented opaque-root pattern.
-// design-style: opaque-root
-private val MainWindowBackground = Color(0xFF16161A) // design-style: fixed-figma-color main window background
 
 private fun LibraryCategory.iconRes(): Int = when (this) {
     LibraryCategory.LIBRARY -> R.drawable.ic_nav_library
@@ -146,18 +142,29 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
     }
 
     PicoTheme {
-        Box(modifier = modifier.fillMaxSize().background(MainWindowBackground)) {
+        // The launcher <activity> has pico.spatial.windowcontainer.materialbackground="0" (see
+        // AndroidManifest.xml), so this root is the sole owner of this window's background -
+        // painting over the system glass would be wrong, but painting it after disabling the
+        // glass switch is the documented opaque-root pattern.
+        // design-style: opaque-root
+        Box(modifier = modifier.fillMaxSize().background(SpacePlayerBackground)) {
             if (!hasVideoPermission) {
                 Column(modifier = Modifier.fillMaxSize().padding(32.dp)) {
                     Text(
                         text = "SpacePlayer 需要访问本机视频的权限才能显示视频库",
-                        color = PicoTheme.colorScheme.labelPrimary,
+                        color = SpacePlayerTextPrimary,
                         style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
                     )
-                    Button(onClick = { permissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO) }) {
+                    Button(
+                        onClick = { permissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SpacePlayerAccent,
+                            contentColor = SpacePlayerOnAccent,
+                        ),
+                    ) {
                         Text(
                             text = "去授权",
-                            color = PicoTheme.colorScheme.labelPrimary,
+                            color = SpacePlayerOnAccent,
                             style = PicoTheme.typography.titleLarge.copy(fontSize = 20.sp),
                         )
                     }
@@ -170,7 +177,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                     header = {
                         Text(
                             text = "SpacePlayer",
-                            color = PicoTheme.colorScheme.labelPrimary,
+                            color = SpacePlayerTextPrimary,
                             style = PicoTheme.typography.titleLarge.copy(fontSize = 22.sp),
                             modifier = Modifier.padding(bottom = 16.dp),
                         )
@@ -180,6 +187,12 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         val categoryInteractionSource = remember(category) { MutableInteractionSource() }
                         SideNavigationItem(
                             selected = libraryViewModel.selectedCategory == category,
+                            colors = SideNavigationItemDefaults.colors(
+                                unselectedContentColor = SpacePlayerTextSecondary,
+                                unselectedContainerColor = Color.Transparent,
+                                selectedContentColor = SpacePlayerTextPrimary,
+                                selectedContainerColor = SpacePlayerSurfaceSelected,
+                            ),
                             modifier = Modifier
                                 .padding(bottom = 4.dp)
                                 .clickable(
@@ -237,10 +250,16 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                 }
 
                 Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                    val filterChipColors = ChipsDefaults.toggleableChipColors(
+                        contentColor = SpacePlayerTextPrimary,
+                        backgroundColor = SpacePlayerSurface,
+                        activeContentColor = SpacePlayerOnAccent,
+                        activeBackgroundColor = SpacePlayerAccent,
+                    )
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = libraryViewModel.selectedCategory.label,
-                            color = PicoTheme.colorScheme.labelPrimary,
+                            color = SpacePlayerTextPrimary,
                             style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
                         )
 
@@ -250,6 +269,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                             label = { Text("全部") },
                             isToggleOn = libraryViewModel.formatFilter == null,
                             onClick = { libraryViewModel.selectFormatFilter(null) },
+                            colors = filterChipColors,
                             modifier = Modifier.padding(start = 16.dp),
                         )
                         Projection.entries.forEach { candidate ->
@@ -257,6 +277,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                 label = { Text(candidate.filterLabel()) },
                                 isToggleOn = libraryViewModel.formatFilter == candidate,
                                 onClick = { libraryViewModel.selectFormatFilter(candidate) },
+                                colors = filterChipColors,
                                 modifier = Modifier.padding(start = 8.dp),
                             )
                         }

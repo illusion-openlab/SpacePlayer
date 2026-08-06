@@ -107,7 +107,7 @@ fun VideoGridCard(
     Column(
         modifier = modifier
             .clip(shape)
-            .background(PicoTheme.colorScheme.fillTertiary)
+            .background(SpacePlayerSurface)
             .then(
                 if (selected) {
                     Modifier.border(2.dp, SpacePlayerAccent, shape)
@@ -130,7 +130,7 @@ fun VideoGridCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .background(PicoTheme.colorScheme.fillPrimary),
+                .background(SpacePlayerThumbnailPlaceholder),
         ) {
             thumbnail?.let {
                 Image(
@@ -149,7 +149,7 @@ fun VideoGridCard(
                 Badge(
                     badgeColor = BadgeDefaults.badgeColors(
                         backgroundColor = item.projection.badgeColor(),
-                        contentColor = PicoTheme.colorScheme.labelPrimaryLight,
+                        contentColor = SpacePlayerOnAccent,
                     ),
                 ) {
                     Text(
@@ -168,7 +168,12 @@ fun VideoGridCard(
                     .align(Alignment.BottomEnd)
                     .padding(8.dp),
             ) {
-                Badge {
+                Badge(
+                    badgeColor = BadgeDefaults.badgeColors(
+                        backgroundColor = SpacePlayerTextPrimary,
+                        contentColor = SpacePlayerOnAccent,
+                    ),
+                ) {
                     Text(
                         text = formatDuration(item.durationMs),
                         style = PicoTheme.typography.bodySmall.copy(fontSize = 12.sp),
@@ -181,13 +186,13 @@ fun VideoGridCard(
                     .align(Alignment.Center)
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(PicoTheme.colorScheme.fillPrimary),
+                    .background(SpacePlayerTextPrimary.copy(alpha = 0.55f)),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_play_triangle),
                     contentDescription = null,
-                    tint = PicoTheme.colorScheme.labelPrimaryLight,
+                    tint = SpacePlayerOnAccent,
                 )
             }
         }
@@ -195,12 +200,12 @@ fun VideoGridCard(
         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
             Text(
                 text = item.displayName,
-                color = PicoTheme.colorScheme.labelPrimary,
+                color = SpacePlayerTextPrimary,
                 style = PicoTheme.typography.bodyLarge.copy(fontSize = 16.sp),
             )
             Text(
                 text = "${item.formatSource.label()} · ${formatFileSize(item.sizeBytes)}",
-                color = PicoTheme.colorScheme.labelTertiary,
+                color = SpacePlayerTextTertiary,
                 style = PicoTheme.typography.bodySmall.copy(fontSize = 12.sp),
                 modifier = Modifier.padding(top = 4.dp),
             )
@@ -210,7 +215,7 @@ fun VideoGridCard(
                 val correctionInteractionSource = remember { MutableInteractionSource() }
                 Text(
                     text = "修正格式",
-                    color = PicoTheme.colorScheme.labelSecondary,
+                    color = SpacePlayerAccent,
                     style = PicoTheme.typography.bodySmall.copy(fontSize = 12.sp),
                     modifier = Modifier
                         .padding(top = 8.dp)

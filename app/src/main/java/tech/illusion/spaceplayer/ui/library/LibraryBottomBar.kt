@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pico.spatial.ui.design.Button
 import com.pico.spatial.ui.design.ButtonDefaults
+import com.pico.spatial.ui.design.ChipsDefaults
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.design.ToggleableChip
@@ -30,6 +31,12 @@ fun LibraryBottomBar(
 ) {
     Row(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
         if (selectedItem?.projection == Projection.FLAT) {
+            val envChipColors = ChipsDefaults.toggleableChipColors(
+                contentColor = SpacePlayerTextPrimary,
+                backgroundColor = SpacePlayerSurface,
+                activeContentColor = SpacePlayerOnAccent,
+                activeBackgroundColor = SpacePlayerAccent,
+            )
             Environment.entries.forEach { env ->
                 ToggleableChip(
                     label = { Text(env.label) },
@@ -42,13 +49,14 @@ fun LibraryBottomBar(
                                 .background(env.dotColor(), CircleShape),
                         )
                     },
+                    colors = envChipColors,
                     modifier = Modifier.padding(end = 8.dp),
                 )
             }
         } else if (selectedItem != null) {
             Text(
                 text = "全景视频 · 自动沉浸",
-                color = PicoTheme.colorScheme.labelSecondary,
+                color = SpacePlayerTextSecondary,
                 style = PicoTheme.typography.bodyLarge.copy(fontSize = 18.sp),
             )
         }
@@ -59,12 +67,12 @@ fun LibraryBottomBar(
             onClick = onStartPlayback,
             colors = ButtonDefaults.buttonColors(
                 containerColor = SpacePlayerAccent,
-                contentColor = PicoTheme.colorScheme.labelPrimaryLight,
+                contentColor = SpacePlayerOnAccent,
             ),
         ) {
             Text(
                 text = "开始播放",
-                color = PicoTheme.colorScheme.labelPrimaryLight,
+                color = SpacePlayerOnAccent,
                 style = PicoTheme.typography.titleLarge.copy(fontSize = 20.sp),
             )
         }
