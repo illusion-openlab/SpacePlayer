@@ -193,6 +193,23 @@ bug，最后靠 `adb shell uiautomator dump` 直接看到"其它"那个 View 的
   `set-app-locales <pkg> --locales ""` 清空覆盖，避免影响下次会话。中英文都截图/`uiautomator dump`
   核对过主界面和格式修正弹层的全部文案。
 
+**底部操作栏垂直居中对齐（2026-08-06）**：用户看着截图指出侧栏"其它·选择文件"和内容区"环境选择器 + 开始播放"
+这一整排看起来没有垂直居中对齐。两者其实在完全独立的两个 Column 里（侧栏 vs 内容区），`LibraryBottomBar` 内部
+的 `Row` 本来就有 `verticalAlignment = CenterVertically`，只对齐了它自己内部的环境 Chip 和"开始播放"按钮，
+跟侧栏那个"其它"框完全不知道对方的存在。修复思路跟之前"SpacePlayer 标题对齐"那次一样——两边分别包一个**同样
+高度**（新增 `FOOTER_HEIGHT = 56.dp`，跟已有的 `HEADER_ROW_HEIGHT` 是同一个套路）的容器再居中，而不是指望
+"挪一下 padding 就能对齐"：
+- 侧栏"其它"框：外层加 `.height(FOOTER_HEIGHT)`，`Box` 自身用 `contentAlignment = Alignment.CenterStart`
+  把内部图标+文字整体在这个固定高度里垂直居中；顺手把它自己的 `padding(bottom = 20.dp)` 改成 `16.dp`，
+  跟内容区 Column 自带的 `padding(16.dp)` 底部间距对齐（原来两边到窗口底边的距离差 4dp，也是造成"看起来没对齐"
+  的一部分原因）。
+- 内容区：`MainLibraryScreen.kt` 里包住 `LibraryBottomBar` 的外层 `Box` 加 `.height(FOOTER_HEIGHT)`；
+  `LibraryBottomBar.kt` 内部的 `Row` 改成 `Modifier.fillMaxSize()`（原来是 `fillMaxWidth().padding(16.dp)`）
+  ——`verticalAlignment` 要在 `Row` 自己不是"包多高就是多高"、而是被外部撑到固定高度时才有实际居中效果，
+  光设 `verticalAlignment` 参数不会凭空生效。`FOOTER_HEIGHT` 这个常量只定义在 `MainLibraryScreen.kt` 一处，
+  没有在 `LibraryBottomBar.kt` 里重复定义同一个数字——那个文件的 `Row` 只管 `fillMaxSize()` 去适配调用方
+  给多高，具体高度由调用方（`MainLibraryScreen.kt`）统一决定。
+
 ## 为什么这么设计
 
 - 单一 `DefaultWindowContainer`（占位主窗口，选测试用例用）+ 单一共享 `Stage(id = "ImmersiveStage")`：见设计稿

@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -33,8 +33,11 @@ fun LibraryBottomBar(
     onSelectEnvironment: (Environment) -> Unit,
     onStartPlayback: () -> Unit,
 ) {
+    // fillMaxSize (not fillMaxWidth) so this Row adopts whatever fixed height its parent Box is
+    // given (MainLibraryScreen.kt's FOOTER_HEIGHT) - verticalAlignment only has room to center
+    // children within a height the Row doesn't already just wrap.
     Row(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (selectedItem?.projection == Projection.FLAT) {

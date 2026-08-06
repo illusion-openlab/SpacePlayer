@@ -84,6 +84,13 @@ private val HEADER_ROW_HEIGHT = 56.dp
 // from the same Y offset before bottom-aligning within HEADER_ROW_HEIGHT.
 private val HEADER_ROW_HEIGHT_PADDING = 16.dp
 
+// Shared height for the sidebar's "其它" action and the content column's bottom bar
+// (environment selector + "开始播放"), so the two vertically center-align across the Row's two
+// independent Columns the same way HEADER_ROW_HEIGHT does at the top. Applied to the wrapping Box
+// at each call site; LibraryBottomBar's own Row just fillMaxSize()s to adopt whatever height its
+// parent Box is given, rather than duplicating this constant into that file.
+private val FOOTER_HEIGHT = 56.dp
+
 // Fixed sidebar width - see the comment at its usage site for why this must be explicit now that
 // the "其它" action lives in a plain wrapping Column instead of inside SideNavigation's own
 // width-constrained content slot.
@@ -268,8 +275,12 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                     Box(
                         modifier = Modifier
                             .padding(horizontal = 24.dp)
-                            .padding(bottom = 20.dp)
+                            // Matches the content column's own Modifier.padding(16.dp) bottom
+                            // inset around LibraryBottomBar, so both footer elements sit the same
+                            // distance from the window's bottom edge.
+                            .padding(bottom = 16.dp)
                             .fillMaxWidth()
+                            .height(FOOTER_HEIGHT)
                             .dashedBorder(SpacePlayerAccent, RoundedCornerShape(12.dp))
                             .clickable(
                                 interactionSource = importInteractionSource,
@@ -277,7 +288,8 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                 onClick = { importLauncher.launch(arrayOf("video/*")) },
                             )
                             .controllerHapticFeedback(interactionSource = importInteractionSource)
-                            .padding(12.dp),
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.CenterStart,
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -360,7 +372,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         ScrollIndicator(state = gridState)
                     }
 
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    Box(modifier = Modifier.fillMaxWidth().height(FOOTER_HEIGHT)) {
                         if (libraryViewModel.selectedItem != null) {
                             LibraryBottomBar(
                                 selectedItem = libraryViewModel.selectedItem,
