@@ -69,6 +69,33 @@ Stage 3 过程中发现并修复的**关键 bug**：`SubtitleFollowComponent` �
 不报错。修复：`SubtitleFollowComponent` 改成用 `remember {}` 存在 Composable 局部变量里，完全不进 ECS
 `components` 系统，直接把引用传给 `applySubtitleFollow`。详见 Stage 3 计划 Task 6 的记录。
 
+**"返回主窗口"功能（2026-08-06）**：点击视频播放进入沉浸模式后主窗口会消失，这是因为 `Stage(StageStyle.Full)`
+完全替代真实环境；`ImmersiveScene.kt` 现在用 `DisposableEffect` 显式 `closeWindowContainer(MAIN_WINDOW_ID)`
+（进入时）/`openWindowContainer(MAIN_WINDOW_ID)`（退出时，`onDispose`）而不是依赖它自己重新出现——这是 SDK 自己
+文档里"展开到沉浸模式"的既定模式。沉浸 HUD 的退出按钮改名"返回主窗口"，视频播放到 `onCompleted` 时也会自动走同一
+条返回路径（`PlaybackManager.onPlaybackCompleted` → `PlaybackViewModel.returnToMainWindowRequested` →
+`ImmersiveScene` 的 `LaunchedEffect`），替换掉之前退出即 `seekTo(0)` 死循环重播的行为。已通过完整 `adb logcat`
+链路验证：主窗口容器销毁→播放到视频真实时长结束→`closeStage()`→主窗口容器重建并前台显示，全程无异常。
+
+**视频资源库视觉重做（2026-08-06）**：用户对照一张模拟器截图和一张设计效果图，指出主窗口视觉语言（网格卡片、彩色
+格式徽标、图标化侧栏、强调色主题、格式筛选入口）设计稿阶段从未真正实现过，一直是 SpatialUI 默认朴素样式。这次
+按效果图整体重做：`LazyColumn` 单列行 → `LazyVerticalGrid` 三列网格卡片（`VideoGridCard.kt`，缩略图+居中播放
+图标+彩色格式徽标+时长徽标+选中态强调色描边）；顶部加 `ToggleableChip` 格式筛选行接上 Stage 2 就写好但从未接 UI
+的 `LibraryViewModel.selectFormatFilter`（之前是死代码）；侧栏加 `SideNavigation(header = "SpacePlayer")` +
+每个分类项的图标（新增 5 个纯手绘 XML vector drawable，见下面"关键文件"，没有引入
+`androidx.compose.material.icons`，避免碰 Material 命名空间）+ "其它·选择文件"从可选分类里拆出来做成侧栏底部
+单独的虚线框按钮；`LibraryBottomBar` 环境选择器换成彩色圆点 `ToggleableChip`；主窗口 manifest 加
+`pico.spatial.windowcontainer.materialbackground="0"` 关掉系统玻璃背景，根节点改成 `SpacePlayerPalette.kt`
+里的固定深色背景（`design-style: opaque-root` 注释）。全程遵循 `spatial-ui-design-style` 技能的硬规则，
+`scripts/verify-design-style.sh` 跑到 0 error/0 warning：所有非语义化层级色的固定色都标了
+`// design-style: fixed-figma-color`，所有自定义 `.clickable(` 调用都补了共享 `interactionSource` 的
+`LocalIndication.current` + `controllerHapticFeedback`。**唯一没做的**：自定义卡片没有 `spatialHoverEffect`——
+这个项目实际锁定的 SDK 版本（0.13.3）里这个 API 只有底层 `SpatialHoverEffectRootScope` block 版本（要手写
+scale/offset/alpha 动画节点），没有简单的 `enabled` 参数版本，风险收益比不划算，卡片退化成只有 `clickable` 自带
+的按压反馈，没有原生 hover 动画（此前所有 built-in 组件如 `Button`/`ListItem` 的 hover 都是免费的，这是第一个
+需要自己接 hover 的自定义组件）。已通过模拟器截图确认整体渲染符合预期（网格/彩色徽标/侧栏图标/筛选栏/环境圆点/
+选中描边/深色背景全部正常），缩略图目前是纯黑色方块——这是测试视频本身首帧是黑色画面，不是缩略图加载代码的 bug。
+
 ## 为什么这么设计
 
 - 单一 `DefaultWindowContainer`（占位主窗口，选测试用例用）+ 单一共享 `Stage(id = "ImmersiveStage")`：见设计稿
@@ -222,6 +249,24 @@ Stage 3 过程中发现并修复的**关键 bug**：`SubtitleFollowComponent` �
   容器"的流程时，临时触发代码要么只触发一次就彻底移除自身逻辑（不要留一个可能被重新满足的守卫条件），要么改用
   `adb logcat` 追踪真实调用链（`closeWindowContainer`/`onContainerDestroy`/`openWindowContainer`/
   `onContainerForeground` 这些日志行本身就足够证明整条链路是否按预期跑通，不一定需要额外截图）。
+- **真机（PICO B3110 实测）内置屏幕带 `FLAG_SECURE`，`adb shell screencap`/`pico-cli capture screenshot` 在真机
+  上直接报错"Capturing failed"拿不到任何截图**（模拟器的虚拟屏幕没有这个限制，截图一直正常）——这不是权限或
+  唤醒状态问题，`mWakefulness=Awake` 时一样失败。真机上做视觉验证只能靠 `adb shell uiautomator dump`（文字层级
+  树，不受 `FLAG_SECURE` 限制）+ `adb logcat` + 用户目视确认三者组合，不要花时间反复重试截图命令。
+- **真机屏幕靠佩戴传感器复用 Android 的"翻盖开关"（`lid_switch`）机制自动休眠/唤醒**——没人戴的时候
+  `adb shell input keyevent KEYCODE_WAKEUP` 能瞬间唤醒但立刻又被压回休眠（`dumpsys power` 里
+  `mLastSleepReason=lid_switch`），`adb` 无法长期保持屏幕唤醒；这不是可以靠改系统设置绕过的地方（改佩戴检测
+  阈值属于修改系统设置，不在允许范围内），需要用户实际戴上设备触发传感器才能继续截图/点击验证。
+- **本机 adb daemon 在这次会话里反复自发断线**（`* daemon still not running / cannot connect to daemon at
+  tcp:5037`），怀疑是 Android Studio 自带的 adb 客户端和命令行 `adb`/`pico-cli` 内部调用的 adb 抢 5037 端口——
+  `adb kill-server && adb start-server` 或者干脆重跑一遍失败的命令通常就能自愈，不需要更激烈的手段（比如重启
+  模拟器/设备）。
+- **`Modifier.spatialHoverEffect` 在这个项目实际锁定的 SDK 版本（0.13.3）上只有一个重载**：
+  `spatialHoverEffect(block: SpatialHoverEffectRootScope.(SpatialHoverEffectContext) -> Unit)`——没有更简单的
+  `enabled: Boolean` 参数版本（那是更新版本 SDK 才有的 API 面，`spatial-ui-design-style` 技能的示例代码是按新版本
+  写的，跟这个项目实际编译进来的 `design-0.13.3-sources.jar`/`foundation-0.13.3-sources.jar` 对不上）。给自定义
+  组件接 hover 前，先解压对应版本的 sources jar（`~/.gradle/caches/modules-2/files-2.1/com.pico.spatial.ui/
+  foundation/<version>/*/foundation-<version>-sources.jar`）确认真实签名，不要直接照抄技能文档里的调用方式。
 
 ## 关键文件
 
@@ -285,12 +330,20 @@ Stage 3 过程中发现并修复的**关键 bug**：`SubtitleFollowComponent` �
   开头区分"视频资源库"/"下载"。
 - `ui/library/LibraryViewModel.kt` — 主窗口浏览状态（分类/筛选/选中项/列表），**不**入 Koin，直接在
   `MainLibraryScreen` 里 `remember` 持有（只在主窗口用，不需要跨容器共享）。
-- `ui/library/MainLibraryScreen.kt` — 权限门 + `SideNavigation`（四分类）+ `LazyColumn`（真实列表）+
+- `ui/library/MainLibraryScreen.kt` — 权限门 + `SideNavigation`（四分类，2026-08-06 视觉重做后是三个可选分类
+  + 侧栏底部单独的"其它"虚线框）+ `LazyVerticalGrid`（真实网格列表，2026-08-06 起替换原来的 `LazyColumn`）+
   `LibraryBottomBar` + `FormatCorrectionPopup` + SAF"其它"，替换掉 Stage 1 的 `PlaceholderMainScreen.kt`。
-- `ui/library/VideoListCard.kt` — `ListItem` + `contentResolver.loadThumbnail()` 懒加载缩略图 + `Badge` 格式徽标。
+- `ui/library/VideoGridCard.kt`（2026-08-06 视觉重做前叫 `VideoListCard.kt`，`ListItem` 单列行）— 网格卡片：
+  大缩略图 + 居中播放图标浮层 + `contentResolver.loadThumbnail()` 懒加载缩略图 + 左上角按 `projection` 着色的
+  格式 `Badge` + 右下角时长 `Badge` + 选中态强调色描边。
+- `ui/library/SpacePlayerPalette.kt`（2026-08-06 新增）— 设计稿要求的固定品牌色（强调色橙、按 projection/
+  environment 区分的徽标色/圆点色），全部用 `Color(0x...).withVibrant(Vibrant.None)` 钉死，不走
+  `PicoTheme.colorScheme` 自适应层级（因为语义色表里没有"视频格式"/"环境"这种角色），每处都有
+  `// design-style: fixed-figma-color` 行内注释满足 `spatial-ui-design-style` 校验脚本。
 - `ui/library/FormatCorrectionPopup.kt` — `SpatialPopup` + 两组 `SegmentControl`（投影/立体格式）+ Stage 3 加的
   字幕状态行/选择按钮。
-- `ui/library/LibraryBottomBar.kt` — 环境选择器（复用 `Environment` 枚举）+ "开始播放"。
+- `ui/library/LibraryBottomBar.kt` — 环境选择器（复用 `Environment` 枚举，2026-08-06 起用 `ToggleableChip` +
+  彩色圆点图标代替纯文字按钮）+ "开始播放"（强调色填充按钮）。
 
 ### Stage 3 新增文件（外部 `.srt` 字幕）
 
@@ -380,11 +433,26 @@ Stage 1、Stage 2、Stage 3 均已完成，`docs/superpowers/specs/2026-08-05-sp
 （网络协议播放、FileSendApp 集成、内嵌字幕轨道/`.ass`、AI 2D→3D、电影院高保真美术、环境切换过渡动画），不是待办
 的后续 Stage。
 
-如果要继续往前推进，比较合理的方向是**补齐这次会话里如实标注过、还没做实机验证的几个点**（不是新功能，是把已经
-写好的代码路径在真机上跑一遍）：
-1. 真机上验证字幕面板的位置延迟跟随 + 朝向跟随是否符合预期（模拟器 `HMDTrackingProvider.start()` 直接失败，
-   见"本机环境注意事项"）。
-2. 真机或换一种点击方式，把"SAF 选择器里点选一个 `.srt` 文件"这一步跑通（这次会话里 adb 点击进不了那块虚拟屏幕）。
-3. 真实 SAF 导入一个视频，确认字幕自动发现在这种场景下确实返回空、手动指定仍然可用（目前只有代码审查）。
-4. 如果之后有新的功能性需求（比如非目标里提到的电影院高保真美术、字幕样式），从设计稿的"非目标"章节移出、单独
+2026-08-06 这次会话额外做了"返回主窗口"功能（真机验证前先在模拟器 logcat 完整链路确认）和视频资源库的视觉重做
+（网格卡片/彩色徽标/图标侧栏/格式筛选/深色主题，模拟器截图确认渲染正确）。会话中途拿到了一台真机 **PICO
+B3110**（`PB311XKGL5070015G`），但发现这台设备的内置屏幕带 `FLAG_SECURE`，`adb shell screencap`/`pico-cli
+capture screenshot` 在真机上直接报错拿不到截图（模拟器没有这个限制）——真机验证要么靠 `adb logcat`/
+`uiautomator dump`（文字，不受 `FLAG_SECURE` 限制）配合用户目视确认，要么换用户手柄真实交互而不是 adb 模拟点击；
+另外这台设备靠佩戴传感器（`lid_switch` 复用）控制屏幕唤醒/休眠，没人戴的时候会立刻休眠且 `adb`
+唤醒不了——这几点已经在下面"本机环境注意事项"里记录。
+
+如果要继续往前推进，比较合理的方向：
+1. **真机验证清单（用户已经把 B3110 戴上过，但这次会话转去做视觉重做了，还没跑完）**：
+   - 字幕面板的位置延迟跟随 + 朝向跟随是否符合预期（模拟器 `HMDTrackingProvider.start()` 直接失败，真机上
+     `register remote topic success: T:XR_HMD_DATA_TOPIC` 已经在 logcat 里见过一次，但没有专门转头验证跟随
+     手感）。
+   - 真机上把"SAF 选择器里点选一个 `.srt` 文件"这一步跑通——真机没有模拟器那种虚拟屏幕路由问题，理论上直接用
+     手柄交互就行，但这次会话没有实际走一遍。
+   - 真实 SAF 导入一个视频，确认字幕自动发现在这种场景下确实返回空、手动指定仍然可用（目前只有代码审查）。
+   - 这次视觉重做也应该在真机上（不只是模拟器）用手柄实际点一遍格式筛选/网格卡片/侧栏/环境圆点选择器，确认
+     手柄交互（不是 adb 模拟点击）下点击区域、hover 反馈都符合预期。
+2. **设计对齐时发现但这次没做的功能性缺口**（详见设计对齐记录）：沉浸 HUD 完全没有进度条和音量控制——Stage 1
+   计划里写的是"留给 Stage 2"，但 Stage 2/3 都没有再捡回来，`PlaybackManager.seekTo()`/`setVolume()` 都在但
+   没有 UI 入口。
+3. 如果之后有新的功能性需求（比如非目标里提到的电影院高保真美术、字幕样式），从设计稿的"非目标"章节移出、单独
    立项写新的 spec/plan，而不是默认继续加到 Stage 3 里。

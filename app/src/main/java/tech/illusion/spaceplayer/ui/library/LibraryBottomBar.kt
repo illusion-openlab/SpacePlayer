@@ -1,15 +1,22 @@
 package tech.illusion.spaceplayer.ui.library
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pico.spatial.ui.design.Button
+import com.pico.spatial.ui.design.ButtonDefaults
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
+import com.pico.spatial.ui.design.ToggleableChip
 import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.Projection
@@ -24,13 +31,19 @@ fun LibraryBottomBar(
     Row(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
         if (selectedItem?.projection == Projection.FLAT) {
             Environment.entries.forEach { env ->
-                Button(onClick = { onSelectEnvironment(env) }) {
-                    Text(
-                        text = if (env == selectedEnvironment) "[${env.label}]" else env.label,
-                        color = PicoTheme.colorScheme.labelPrimary,
-                        style = PicoTheme.typography.bodyLarge.copy(fontSize = 18.sp),
-                    )
-                }
+                ToggleableChip(
+                    label = { Text(env.label) },
+                    isToggleOn = env == selectedEnvironment,
+                    onClick = { onSelectEnvironment(env) },
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(env.dotColor(), CircleShape),
+                        )
+                    },
+                    modifier = Modifier.padding(end = 8.dp),
+                )
             }
         } else if (selectedItem != null) {
             Text(
@@ -39,10 +52,19 @@ fun LibraryBottomBar(
                 style = PicoTheme.typography.bodyLarge.copy(fontSize = 18.sp),
             )
         }
-        Button(onClick = onStartPlayback) {
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Button(
+            onClick = onStartPlayback,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = SpacePlayerAccent,
+                contentColor = PicoTheme.colorScheme.labelPrimaryLight,
+            ),
+        ) {
             Text(
                 text = "开始播放",
-                color = PicoTheme.colorScheme.labelPrimary,
+                color = PicoTheme.colorScheme.labelPrimaryLight,
                 style = PicoTheme.typography.titleLarge.copy(fontSize = 20.sp),
             )
         }

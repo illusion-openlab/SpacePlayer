@@ -57,6 +57,13 @@
                 android:name="pico.spatial.windowcontainer.worldscaletype"
                 android:value="2" />
 
+            <!-- Main window uses an opaque dark background (MainLibraryScreen's root Box) to
+                 match the design mockup instead of the system's default translucent glass, so the
+                 glass must be switched off here first - see spatial-ui-design-style's Rule #4. -->
+            <meta-data
+                android:name="pico.spatial.windowcontainer.materialbackground"
+                android:value="0" />
+
         </activity>
         <meta-data android:name="icon.3d.list" android:resource="@array/icon_3d_list" />
         <meta-data android:name="icon.sdf.list" android:resource="@array/icon_sdf_list" />
