@@ -37,8 +37,10 @@ private fun StereoMode.label() = when (this) {
 fun FormatCorrectionPopup(
     initialProjection: Projection,
     initialStereoMode: StereoMode,
+    hasSubtitle: Boolean,
     onDismissRequest: () -> Unit,
     onConfirm: (Projection, StereoMode) -> Unit,
+    onPickSubtitle: () -> Unit,
 ) {
     var projection by remember { mutableStateOf(initialProjection) }
     var stereoMode by remember { mutableStateOf(initialStereoMode) }
@@ -78,6 +80,20 @@ fun FormatCorrectionPopup(
                     )
                 }
             }
+            Row(modifier = Modifier.padding(top = 12.dp)) {
+                Text(
+                    text = if (hasSubtitle) "字幕：已设置" else "字幕：未设置",
+                    color = PicoTheme.colorScheme.labelSecondary,
+                    style = PicoTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                )
+                Button(onClick = onPickSubtitle) {
+                    Text(
+                        text = "选择字幕文件",
+                        style = PicoTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                    )
+                }
+            }
+
             Row(modifier = Modifier.padding(top = 12.dp)) {
                 Button(onClick = onDismissRequest) {
                     Text(text = "取消", style = PicoTheme.typography.bodyLarge.copy(fontSize = 16.sp))

@@ -73,6 +73,20 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    val subtitleLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        val item = itemPendingCorrection
+        val name = uri?.let { DocumentFile.fromSingleUri(context, it)?.name }
+        if (uri != null && item != null && name?.endsWith(".srt", ignoreCase = true) == true) {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            libraryViewModel.preferencesStore.setSubtitleUri(item.uri, uri)
+            itemPendingCorrection = item.copy(subtitleUri = uri)
+            libraryViewModel.refreshLibrary()
+            libraryViewModel.refreshDownloads()
+        }
+    }
+
     var hasVideoPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -184,6 +198,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
             FormatCorrectionPopup(
                 initialProjection = item.projection,
                 initialStereoMode = item.stereoMode,
+                hasSubtitle = item.subtitleUri != null,
                 onDismissRequest = { itemPendingCorrection = null },
                 onConfirm = { projection, stereoMode ->
                     libraryViewModel.preferencesStore.setFormatOverride(item.uri, projection, stereoMode)
@@ -191,6 +206,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                     libraryViewModel.refreshDownloads()
                     itemPendingCorrection = null
                 },
+                onPickSubtitle = { subtitleLauncher.launch(arrayOf("*/*")) },
             )
         }
     }

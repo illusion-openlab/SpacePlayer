@@ -1012,7 +1012,7 @@ git commit -m "Stage 3 Task 6: wire subtitle AttachmentPanel into ImmersiveScene
 - Consumes: `VideoPreferencesStore.setSubtitleUri`（Task 3）。
 - Produces: `FormatCorrectionPopup` 新增 `hasSubtitle: Boolean`/`onPickSubtitle: () -> Unit` 参数。
 
-- [ ] **Step 1: 改 `FormatCorrectionPopup.kt`——加字幕状态显示 + 选择按钮**
+- [x] **Step 1: 改 `FormatCorrectionPopup.kt`——加字幕状态显示 + 选择按钮**
 
 ```kotlin
 // 函数签名追加两个参数：
@@ -1059,7 +1059,7 @@ fun FormatCorrectionPopup(
 }
 ```
 
-- [ ] **Step 2: 改 `MainLibraryScreen.kt`——加字幕 SAF 选择器 + 接线**
+- [x] **Step 2: 改 `MainLibraryScreen.kt`——加字幕 SAF 选择器 + 接线**
 
 ```kotlin
 // 顶部 import 追加（如果还没有）：
@@ -1100,20 +1100,26 @@ import androidx.documentfile.provider.DocumentFile
 
 `itemPendingCorrection = item.copy(subtitleUri = uri)` 让弹层里的"字幕：已设置"文案立即反映刚选的文件，不需要关掉弹层重开才能看到状态更新。mime 类型用 `"*/*"` 而不是猜 `.srt` 的真实 mime type（不同设备/存储提供方报的 mime 不统一，`text/plain`/`application/octet-stream`/`application/x-subrip` 都可能出现），选中后靠文件名后缀校验。
 
-- [ ] **Step 3: 构建确认编译通过**
+- [x] **Step 3: 构建确认编译通过**
 
 ```bash
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew assembleDebug
 ```
 
-Expected: `BUILD SUCCESSFUL`。
+Expected: `BUILD SUCCESSFUL`。实际：通过。
 
-- [ ] **Step 4: 模拟器截图验证——打开修正弹层，确认"字幕：未设置/已设置"文案正确，点"选择字幕文件"弹出 SAF 选择器**
+- [x] **Step 4: 模拟器截图验证——打开修正弹层，确认"字幕：未设置/已设置"文案正确，点"选择字幕文件"弹出 SAF 选择器**
 
-沿用 Task 3（Stage 2）已经验证过的临时 `LaunchedEffect` 手法触发 `itemPendingCorrection = firstItem`，截图确认弹层里的字幕状态行 + 按钮渲染正确；用 `adb shell uiautomator dump` 拿坐标点选一个 `.srt` 文件确认能选中（沿用 Stage 2 Task 9 验证 SAF 视频导入时用过的同一套坐标定位方法）。验证完删除临时代码。
+**实际验证结果（部分完成，如实记录）：**
 
-- [ ] **Step 5: 提交**
+用临时 `LaunchedEffect` 把 `itemPendingCorrection` 设成 `library_test.mp4`（没有同目录 `.srt`），截图确认：弹层正确渲染"字幕：未设置" + "选择字幕文件"按钮（见 `artifacts/stage3-task7-popup.png`，文字缩放裁剪见 `stage3-task7-popup-zoom2.png`）。再用临时代码直接调用 `subtitleLauncher.launch(arrayOf("*/*"))`（不经过按钮点击，因为 Compose 按钮在这套 spatial container 里不能可靠地用 adb tap 命中——和 Stage 2 已经记录的限制一致），确认 SAF 文档选择器正常弹出并显示 Recent 文件列表（见 `artifacts/stage3-task7-saf.png`）。
+
+**未能完成的部分**：在 SAF 选择器内部点选一个具体的 `.srt` 文件这一步没有验证成功——`adb shell uiautomator dump` 能正确拿到列表项的坐标，但无论用 `adb shell input tap`、`adb shell input -d 0 tap`还是 `adb shell input -d 2 tap`（`2` 是 `dumpsys display` 里查到的 `VirtualDisplayAdapter` 虚拟屏幕 id，`com.pxr.scenarioprovider` 用它承载这个 SAF 悬浮面板），点击都没有使列表产生任何变化（截图前后字节不同但内容上没有反映点击效果，比如没有进入子目录、没有选中效果）。这和 Stage 2 Task 9 记录的"SAF GridView 有时需要两次点击"不是同一个问题——这次是列表视图（ListView 而非 GridView），且换了两个不同的虚拟屏幕 id 都没有效果，怀疑是这台重新启动过的模拟器在这个会话里输入事件路由到这块虚拟屏幕的方式和之前不一样，没有深挖到底（不确定是模拟器这次冷启动状态的问题，还是 ListView 和 GridView 的 hit-test 区域计算不同）。**没有伪造验证结果**：`onPickSubtitle`/`subtitleLauncher`/`setSubtitleUri` 这条代码路径和 Stage 2 已经验证过能跑通的 `importLauncher`（同样用 `ActivityResultContracts.OpenDocument()` + `takePersistableUriPermission`）用的是同一个机制，只是这次没能在 UI 层面点选到具体文件来闭环验证"选中后弹层文案变成已设置"这一步，如实标注为未完成，不是遗漏。
+
+验证完删除临时代码，重新构建确认干净（`./gradlew assembleDebug testDebugUnitTest` 通过）。
+
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/ui/library/FormatCorrectionPopup.kt \
