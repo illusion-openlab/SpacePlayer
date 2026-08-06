@@ -6,10 +6,12 @@
 visionOS 应用 [Moon Player](https://moonvrplayer.com/zh/moon-player-apple-vision-pro)。完整产品规划见
 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md`。
 
-**Stage 1（项目骨架 + 沉浸播放核心）已全部完成（Task 1-9），Stage 1 收尾**，计划见
-`docs/superpowers/plans/2026-08-05-stage1-immersive-playback-core.md`。Stage 1 只用硬编码测试视频跑通
-"平面 → 环境化平面（电影院/星空/海景，可实时切换）→ 180°半球 → 360°球体" 这条播放链路，不含真实文件库 UI
-（Stage 2）、不含字幕（Stage 3）。下一步是规划 Stage 2。
+**Stage 1（项目骨架 + 沉浸播放核心）和 Stage 2（真实文件库 UI + 格式识别 + 播放历史）都已完成**，计划分别见
+`docs/superpowers/plans/2026-08-05-stage1-immersive-playback-core.md` 和
+`docs/superpowers/plans/2026-08-06-stage2-video-library.md`。当前主窗口是真实的本机视频浏览界面
+（`ui/library/MainLibraryScreen.kt`），不再是 Stage 1 遗留的固定测试按钮占位页——"视频资源库/下载/历史/其它"
+四分类 + 三级格式识别（容器探测→文件名→默认兜底）+ 手动覆盖 + 播放历史/偏好环境持久化全部接入真实数据。不含字幕
+（Stage 3，下一步）。
 
 Task 4/5/6/7/8 验证结果：平面测试视频（`sample_flat_test.mp4`，ffmpeg 合成的彩条测试图案）能在
 `Stage("ImmersiveStage")` 里通过 `VideoPlayerComponent` + `CypressMediaPlayer` 正确渲染播放（模拟器截图确认，
@@ -27,6 +29,22 @@ Task 9（端到端回归，六条路径全部截图确认，见 `./artifacts/tas
 （`exitImmersive()` + `closeStage()` 后模拟器 passthrough 房间正常显示，主窗口 UI 正常，无视频/天空盒/HUD 残留）。
 `./gradlew clean assembleDebug`、`:app:testDebugUnitTest`（5/5 通过）均成功。全程无崩溃（`adb logcat` 确认，
 仅有正常的 Watchdog/AppRecordManagerService 日志，无 FATAL/AndroidRuntime）。
+
+**Stage 2（真实文件库 + 格式识别 + 播放历史）验证结果**：Task 9 端到端回归七条路径全部截图/数据确认（见
+`./artifacts/stage2-regression-{1..7}-*.png`）：1. 权限门（未授权时的引导页）2. 授权后"视频资源库"/"下载"分类
+分别正确显示真实 MediaStore 文件（按 `RELATIVE_PATH` 是否以 `Download/` 开头区分）3. 格式修正弹层
+（`SpatialPopup` + 两组 `SegmentControl`）第一次在真机上完整渲染确认 4. 真实文件（`content://` Uri，不是
+assets 里的测试视频）在沉浸 Stage 里正确播放（`adb logcat` 确认 `AppRecordManagerService: isPlaying=true
+fps=30`，不是只看截图外观）5. 播放历史在首帧渲染时写入、偏好环境在退出时持久化（直接读设备上的
+`SharedPreferences` XML 文件确认，见下面的坑）6. "历史"分类正确显示刚播放过的视频 7. "其它"分类触发 SAF 系统
+文件选择器，只列出视频文件，选中后正确加入选中态。`./gradlew clean assembleDebug :app:testDebugUnitTest`
+27/27 单测通过，全程无崩溃。
+
+Stage 2 过程中发现并修复的**关键 bug**：`AssetFileDescriptor(pfd, 0, AssetFileDescriptor.UNKNOWN_LENGTH)` 会让
+`CypressMediaPlayer` 卡死在 `PREPARING`（不报错、不崩溃，只是永远"加载中"）——这个坑编译期和静态审查都查不出来，
+只有真机播放一个通过 `ContentResolver.openFileDescriptor` 打开的真实文件才会暴露。修复：用
+`pfd.statSize`（`ParcelFileDescriptor` 的 `fstat` 真实文件大小）代替 `UNKNOWN_LENGTH`。详见下面"本机环境注意
+事项"和 Stage 2 计划 Task 7 的记录。
 
 ## 为什么这么设计
 
@@ -68,6 +86,16 @@ Task 9（端到端回归，六条路径全部截图确认，见 `./artifacts/tas
   可靠触发 spatial UI 的点击——不要在这上面反复试坐标（`spatial-emulator-usage`/`spatial-app-dev-workflow` 两个
   技能都写了这条限制）。需要验证"点击触发某个沉浸流程"时，临时在对应 Composable 里加一个
   `LaunchedEffect(Unit) { /* 和 onClick 一样的代码 */ }` 自动触发，验证完删掉。
+- **但系统级 UI（运行时权限对话框、SAF 文件选择器）不是 spatial 容器，`adb tap` 对它们是有效的**——前提是**必须用
+  `adb shell uiautomator dump /sdcard/window_dump.xml` 拿精确 `bounds` 算坐标**，不能凭截图肉眼估坐标（截图是
+  3D 合成场景，像素位置和真实 Android 触摸坐标空间完全不是 1:1 映射，Stage 2 Task 7/9 都在这上面吃过亏——肉眼
+  估的坐标点了好几次都点不中，换成 `uiautomator dump` 算出的 bounds 中心点一次就中）。SAF 的 `GridView` 文件
+  项有时第一次 tap 只是"聚焦"，需要再点一次才真正触发选中/返回，遇到"点了但没反应"先重试一次而不是急着换方案。
+- **`rememberLauncherForActivityResult` 的回调在这套多容器 spatial 架构下有时不会触发 UI 更新**——即使
+  `dumpsys package` 确认权限已经 `granted=true`，App 自己的 Compose 状态也可能没跟着变（怀疑是 Activity Result
+  回调链路在这套架构下的环境特性，没有深挖根因）。可靠的绕过办法：`adb shell am force-stop <pkg>` 之后重新
+  `pico-cli app launch`，让 `checkSelfPermission`（或任何等价的"启动时重新读一次真实状态"逻辑）在全新启动里
+  重新求值。
 - **模拟器冷启动后主窗口渲染有延迟**，`launch` 后至少 `sleep 8-10s` 再截图，`sleep 4-6s` 有时还看不到内容
   （不是崩溃，只是还没渲染完）。
 - **`Entity()` 默认已经带一个 `TransformComponent`**——想设置位置用
@@ -111,12 +139,31 @@ Task 9（端到端回归，六条路径全部截图确认，见 `./artifacts/tas
   可靠——写代码到实际截图之间可能隔了好几个工具调用/来回，真实经过的时间比 `sleep` 参数加起来大得多。需要卡时间窗口
   截图验证时，留足够宽的余量，或者接受"这个中间状态没能截图确认，但代码路径和已确认的状态相同"这种结论，不要为了
   凑一张截图反复重跑。
+- **`AssetFileDescriptor(pfd, 0, AssetFileDescriptor.UNKNOWN_LENGTH)` 会让 `CypressMediaPlayer` 卡死在
+  `PREPARING`**（不报错、不崩溃，`onError`/`onPrepared` 都不触发，`hasFirstFrameRendered` 永远是 false，"加载
+  中…" 遮罩永远盖着）——只有真实 `content://` Uri（`ContentResolver.openFileDescriptor` 打开）会触发，Stage 1
+  用 `context.assets.openFd()` 返回的 `AssetFileDescriptor` 自带正确长度，从来没暴露过这个坑。`PlaybackManager.
+  setup(uri: Uri)` 现在用 `pfd.statSize`（`ParcelFileDescriptor` 的 `fstat` 真实文件大小）代替
+  `UNKNOWN_LENGTH`。判断"播放是否真的在跑"不要只看截图画面像不像在动（短视频播完会停在某一帧，两次截图撞上同一
+  停止帧看着像"没变"），改用 `adb logcat | grep AppRecordManagerService` 找 `isPlaying=true fps=30` 这类真实
+  解码器状态。
+- **`org.json.JSONObject` 和 `Uri.parse()`（Android 静态方法）在纯 JVM 单元测试里都会抛 `RuntimeException`**
+  （这个项目没有接入 Robolectric，Android 单测 stub jar 没有这两者的真实实现）。`library/` 包下任何要写单测的
+  持久化/解析逻辑，序列化改用不碰 Android 类的手写字符串格式（`VideoPreferencesStore` 用 `key=value;key=value`），
+  凡是要处理 `Uri` 的纯逻辑改成全程用 `String` key（`PlaybackHistoryStore`），`Uri` 转换只在不参与单测的 UI/仓库
+  层做（和 `VideoLibraryRepository`/`PlaybackManager` 触碰 Android 框架但不写单测是同一个约定）。
+- **不要假设 SpatialUI 组件有 `onClick` 参数，先看真实签名**——`SideNavigationItem`/`ListItem` 看起来像是可点击的
+  列表项组件，但两者的真实构造函数里都**没有** `onClick`，只是带 hover/haptic 效果的 `Row`/`Box`，点击手势要自己
+  用 `Modifier.clickable(onClick = ...)` 接。这个坑在 Stage 2 Task 5 第一次 `./gradlew assembleDebug` 就报了
+  `No parameter with name 'onClick' found`——写新 SpatialUI 组件调用前，哪怕看着眼熟，也应该实际确认参数列表，
+  不要凭"看起来应该有"下笔。
 
 ## 关键文件
 
-- `Main.kt` — `DefaultWindowContainer { PlaceholderMainScreen() }` + `Stage(id = "ImmersiveStage") {
-  ImmersiveScene() }`（`pico-cli` 生成时是 `DefaultStage { HomeStage() }`，Task 4 改造成现在这个形状，
-  `content/HomeStage.kt`/`assets/box.usdz` 已删除）。
+- `Main.kt` — `DefaultWindowContainer { MainLibraryScreen(modifier = Modifier.windowConstraints(...)) }` +
+  `Stage(id = "ImmersiveStage") { ImmersiveScene() }`（`pico-cli` 生成时是 `DefaultStage { HomeStage() }`，
+  Task 4（Stage 1）先改造成 `PlaceholderMainScreen`，Stage 2 Task 7 再换成真实的 `MainLibraryScreen`，
+  `content/HomeStage.kt`/`assets/box.usdz`/`ui/PlaceholderMainScreen.kt` 都已删除）。
 - **确认无误的真实 import 路径**（全部经 `./gradlew assembleDebug` 编译通过验证）：
   - `DefaultWindowContainer`/`Stage`/`SpatialAppScope`/`launch` → `com.pico.spatial.ui.foundation.dsl`
   - `SpatialView` → `com.pico.spatial.ui.foundation.content`
@@ -137,10 +184,12 @@ Task 9（端到端回归，六条路径全部截图确认，见 `./artifacts/tas
   包住用户）。
 - `ecs/MeshGenerator.kt` — 从 StoryPico 移植的手写球体/半球网格生成器，见上面"半球网格"那条经验。
 - `ui/PlaybackViewModel.kt` — Koin scoped 的共享状态：`screenEntity`/`sphereEntity`/`hemisphereEntity` 三态互斥
-  `enabled`（`disableAllVideoEntities()` 统一处理，避免加第三个实体后手写两两互斥漏掉），
-  `startTestPlayback`/`startSphereTestPlayback`/`startHemisphereTestPlayback` 三个入口。
+  `enabled`（`disableAllVideoEntities()` 统一处理，避免加第三个实体后手写两两互斥漏掉），单一入口
+  `startPlayback(item: VideoItem)`（Stage 2 Task 7 把 Stage 1 的三个测试方法合并成这一个，按 `item.projection`
+  内部分流），`currentItem` 记录当前播放项供历史写入/退出时持久化偏好环境使用。
 - `di/PlaybackModule.kt` — Koin session scope，让 `DefaultWindowContainer` 和 `Stage` 两棵独立 Compose 树共享同一个
-  `PlaybackViewModel`/`CypressMediaPlayer` 实例。
+  `PlaybackViewModel`/`CypressMediaPlayer` 实例；也注册 `VideoPreferencesStore`/`PlaybackHistoryStore` 为
+  Koin `single`（Stage 2 Task 8）。
 - `ui/PlaybackHud.kt`、`ui/LoadingErrorAttachment.kt` — HUD 播放控制条（播放/暂停/退出/环境切换）和 loading/error
   覆盖层，**不**挂在 `screenEntity`/`sphereEntity`/`hemisphereEntity`/环境实体下面（见上面"子实体可见性跟随父实体"
   那条坑），独立加入内容树，固定绝对坐标（用户前方 1.5 米）。HUD 只在 `isFlatProjection` 为真时显示环境切换按钮组，
@@ -150,7 +199,32 @@ Task 9（端到端回归，六条路径全部截图确认，见 `./artifacts/tas
 - `playback/Environment.kt` — `CINEMA`/`STARRY_SKY`/`SEASIDE` 三态枚举，自带 `assetPath`/`label`。
 - `app/src/main/assets/skyboxes/*.jpg` — ffmpeg 生成的三张 2048×1024 渐变占位天空盒贴图（不是真实 HDRI）。
 - `app/build.gradle.kts` / `gradle/libs.versions.toml` — `spatialBom = "0.13.3"`，`compileSdk/minSdk/targetSdk
-  = 35`，加了 `koin-android:3.5.6`，无 Material/Material3 依赖（SpatialUI-only 自检通过）。
+  = 35`，加了 `koin-android:3.5.6`（Stage 1）+ `mockito-core:5.14.2`/`androidx-activity-compose:1.9.3`/
+  `androidx-documentfile:1.0.0`（Stage 2），无 Material/Material3 依赖（SpatialUI-only 自检通过）。
+
+### Stage 2 新增文件（真实文件库 + 格式识别 + 播放历史）
+
+- `library/VideoItem.kt`、`library/PlaybackHistoryEntry.kt` — 数据模型（`FormatSource`/`DetectedFormat` 枚举
+  和数据类也在 `VideoItem.kt` 里）。
+- `library/FilenameFormatDetector.kt` — 纯文件名关键词识别（`_180_`/`_360_`/`_sbs`/`_tb`/`_mvhevc` 等），13 个
+  单测全过。
+- `library/MultiviewTrackProbe.kt` — `MediaExtractorMultiviewProbe` 是**启发式**（同分辨率 HEVC 轨道数 ≥2），
+  不是精确的 MV-HEVC 识别，标准 Android API 没有可验证的多视图分组信息读取接口，本机也没有真实 Apple 空间视频
+  样本验证过准确率——文件名识别和手动覆盖仍是实际可靠的路径。
+- `library/FormatDetector.kt` — 容器探测→文件名→默认兜底三级流水线。
+- `library/storage/KeyValueStore.kt`（接口）/`SharedPreferencesKeyValueStore.kt`（实现）——所有本地持久化的
+  统一底层抽象，方便单测用内存假实现替换。
+- `library/VideoPreferencesStore.kt`、`library/PlaybackHistoryStore.kt` — 格式覆盖/偏好环境、播放历史，序列化
+  和 key 类型的选择见上面"本机环境注意事项"里 `org.json`/`Uri.parse()` 那条坑。
+- `library/VideoLibraryRepository.kt` — `MediaStore.Video.Media` 查询，按 `RELATIVE_PATH` 是否以 `Download/`
+  开头区分"视频资源库"/"下载"。
+- `ui/library/LibraryViewModel.kt` — 主窗口浏览状态（分类/筛选/选中项/列表），**不**入 Koin，直接在
+  `MainLibraryScreen` 里 `remember` 持有（只在主窗口用，不需要跨容器共享）。
+- `ui/library/MainLibraryScreen.kt` — 权限门 + `SideNavigation`（四分类）+ `LazyColumn`（真实列表）+
+  `LibraryBottomBar` + `FormatCorrectionPopup` + SAF"其它"，替换掉 Stage 1 的 `PlaceholderMainScreen.kt`。
+- `ui/library/VideoListCard.kt` — `ListItem` + `contentResolver.loadThumbnail()` 懒加载缩略图 + `Badge` 格式徽标。
+- `ui/library/FormatCorrectionPopup.kt` — `SpatialPopup` + 两组 `SegmentControl`（投影/立体格式）。
+- `ui/library/LibraryBottomBar.kt` — 环境选择器（复用 `Environment` 枚举）+ "开始播放"。
 
 ## 已用的 Spatial SDK 能力
 
@@ -163,6 +237,26 @@ Task 9（端到端回归，六条路径全部截图确认，见 `./artifacts/tas
 - 环境天空盒（`ModelComponent` + `UnlitMaterial` + 复用的球体网格）+ 播放中实时切换——三个环境（电影院/星空/海景）
   都已截图验证，其中海景是在沉浸播放中途实时切换过去的，直接验证了核心需求
 - 还没用到：`StageEnvironmentLightingComponent`（需要 `.ktx` HDR cubemap，本机没有编码工具，Stage 1 不做）
+
+### Stage 2 新用到的 SpatialUI 组件（均已在真机上截图验证，不只是编译通过）
+
+- `SideNavigation`/`SideNavigationItem`（`com.pico.spatial.ui.design`）——左侧分类栏，**没有 `onClick` 参数**，
+  点击手势要靠 `Modifier.clickable` 自己接。
+- `LazyColumn`/`items`（`androidx.compose.foundation.lazy`）——PICO 用同名包重新发布了完整的 Compose Foundation
+  分支（含 lazy list/grid），可以放心当标准 Compose 用。
+- `ListItem`/`ListItemDefaults`/`Badge`（`com.pico.spatial.ui.design`）——视频列表行 + 格式徽标，`ListItem` 同样
+  **没有 `onClick`**，选中高亮靠 `colors = ListItemDefaults.listItemColors(backgroundColor = ...)` 手动传。
+- `SegmentControl`/`SegmentItem`（`com.pico.spatial.ui.design`）——有真实 `onClick` 参数，格式修正弹层里的
+  投影/立体格式选择器。
+- `SpatialPopup`（`com.pico.spatial.ui.design.windows`）——锚定在声明它的位置附近的轻量弹层，`dismissOnClickOutside
+  = true`，格式修正弹层用这个而不是全屏 `AlertDialog`。
+- `Modifier.windowConstraints(minWidth, minHeight, ...)`（`com.pico.spatial.ui.platform.resize`）——只能在
+  `DefaultWindowContainer { ... }` 内容 lambda 的 receiver 作用域里直接调用，或者把已应用过的 `Modifier` 当参数
+  往下传。
+- `rememberLauncherForActivityResult`/`ActivityResultContracts.RequestPermission()`/`OpenDocument()`
+  （`androidx.activity.compose`）——运行时权限请求 + SAF 文件选择器，`LaunchActivity` 的基类链
+  （`SpatialLaunchActivity` → `SpatialStubActivity` → `FragmentActivity`）支持这套标准 Activity Result API，
+  但回调有时不会触发 Compose 重组（见"本机环境注意事项"），需要 `am force-stop` + 重新 `launch` 兜底。
 
 ## 如何构建/安装/运行
 
@@ -178,8 +272,8 @@ pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
 
 ## 下一步
 
-Stage 1 已完成。下一步是规划并实现 **Stage 2（真实文件库 UI + 格式识别 + 播放历史）**，设计见
-`docs/superpowers/specs/2026-08-05-spaceplayer-design.md` 第 2/4 节。`PlaceholderMainScreen.kt` 目前还是
-Stage 1 的手动测试占位 UI（三个固定测试视频按钮 + 环境切换按钮），Stage 2 需要把它换成真实的本机文件浏览/选择界面，
-并接入文件名+容器探测的格式识别逻辑（`playback/Projection.kt`/`playback/StereoMode.kt` 已经是这条链路的类型定义，
-Stage 2 要补的是"怎么从一个真实文件推断出这两个枚举值"，而不是像现在这样由测试按钮直接指定）。
+Stage 1、Stage 2 均已完成。下一步是规划并实现 **Stage 3（字幕）**，设计见
+`docs/superpowers/specs/2026-08-05-spaceplayer-design.md` 第 4 节"字幕"小节：V1 只支持外部 `.srt` 文件（同目录
+同名，或格式修正弹层里手动指定），纯文本逐行时间轴渲染，字幕是独立于 HUD 的另一个 `AttachmentPanel`，锚定在"用户
+朝向"参考系而非银幕/球体网格本身（保证 180°/360° 场景下字幕不随视角旋转飘出可视范围），不做内嵌字幕轨道解析、
+不做 `.ass` 特效样式。

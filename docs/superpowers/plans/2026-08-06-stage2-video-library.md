@@ -89,7 +89,7 @@ app/src/test/java/tech/illusion/spaceplayer/library/
 - Consumes: `tech.illusion.spaceplayer.playback.Projection`、`tech.illusion.spaceplayer.playback.StereoMode`、`tech.illusion.spaceplayer.playback.Environment`（Stage 1 已有，路径 `playback/Projection.kt`/`StereoMode.kt`/`Environment.kt`）。
 - Produces: `VideoItem` 数据类、`FormatSource` 枚举、`DetectedFormat` 数据类、`FilenameFormatDetector.detect(displayName: String): DetectedFormat?` —— Task 2/4/5 都依赖这些类型。
 
-- [ ] **Step 1: 写 `VideoItem.kt`（含 `FormatSource`、`DetectedFormat`）**
+- [x] **Step 1: 写 `VideoItem.kt`（含 `FormatSource`、`DetectedFormat`）**
 
 ```kotlin
 package tech.illusion.spaceplayer.library
@@ -124,7 +124,7 @@ data class DetectedFormat(
 )
 ```
 
-- [ ] **Step 2: 写 `PlaybackHistoryEntry.kt`**
+- [x] **Step 2: 写 `PlaybackHistoryEntry.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.library
@@ -134,7 +134,7 @@ import android.net.Uri
 data class PlaybackHistoryEntry(val videoUri: Uri, val lastPlayedAt: Long)
 ```
 
-- [ ] **Step 3: 写失败的文件名识别测试**
+- [x] **Step 3: 写失败的文件名识别测试**
 
 ```kotlin
 package tech.illusion.spaceplayer.library
@@ -221,12 +221,14 @@ class FilenameFormatDetectorTest {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认失败（类还不存在）**
+- [x] **Step 4: 跑测试确认失败（类还不存在）**
+
+**实际结果**：确认编译失败，`Unresolved reference 'FilenameFormatDetector'`，符合预期。
 
 Run: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" && ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.library.FilenameFormatDetectorTest"`
 Expected: 编译失败，`FilenameFormatDetector` unresolved reference。
 
-- [ ] **Step 5: 写 `FilenameFormatDetector.kt` 让测试通过**
+- [x] **Step 5: 写 `FilenameFormatDetector.kt` 让测试通过**
 
 ```kotlin
 package tech.illusion.spaceplayer.library
@@ -268,12 +270,11 @@ object FilenameFormatDetector {
 }
 ```
 
-- [ ] **Step 6: 跑测试确认通过**
+- [x] **Step 6: 跑测试确认通过**
 
-Run: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" && ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.library.FilenameFormatDetectorTest"`
-Expected: BUILD SUCCESSFUL，14 个测试全部 PASS。
+**实际结果**：BUILD SUCCESSFUL，实际 **13** 个测试全部 PASS（不是草稿写的 14 个，数错了一个，无实质影响）。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**（commit `0e15516`）
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/library/VideoItem.kt \
@@ -297,7 +298,7 @@ git commit -m "Stage 2 Task 1: video catalog data model + filename format detect
 - Consumes: `DetectedFormat`/`FormatSource`（Task 1，`library/VideoItem.kt`）、`FilenameFormatDetector.detect`（Task 1）。
 - Produces: `MultiviewTrackProbe` 接口 + `MediaExtractorMultiviewProbe` 实现、`FormatDetector` 类，`fun detect(context: Context, uri: Uri, displayName: String): DetectedFormat` —— Task 4/5 的 `VideoLibraryRepository`/`LibraryViewModel` 依赖这个签名。
 
-- [ ] **Step 1: 写测试用的假探测器**
+- [x] **Step 1: 写测试用的假探测器**
 
 ```kotlin
 package tech.illusion.spaceplayer.library.fakes
@@ -311,7 +312,7 @@ class FakeMultiviewTrackProbe(private val result: Boolean) : MultiviewTrackProbe
 }
 ```
 
-- [ ] **Step 2: 写失败的流水线测试**
+- [x] **Step 2: 写失败的流水线测试**
 
 ```kotlin
 package tech.illusion.spaceplayer.library
@@ -380,12 +381,11 @@ mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mo
 testImplementation(libs.mockito.core)
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
-Run: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" && ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.library.FormatDetectorTest"`
-Expected: 编译失败，`FormatDetector`/`MultiviewTrackProbe` unresolved reference。
+**实际结果**：确认编译失败，`Unresolved reference 'FormatDetector'`，符合预期。
 
-- [ ] **Step 4: 写 `MultiviewTrackProbe.kt`**
+- [x] **Step 4: 写 `MultiviewTrackProbe.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.library
@@ -442,7 +442,7 @@ class MediaExtractorMultiviewProbe : MultiviewTrackProbe {
 }
 ```
 
-- [ ] **Step 5: 写 `FormatDetector.kt`**
+- [x] **Step 5: 写 `FormatDetector.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.library
@@ -469,21 +469,12 @@ class FormatDetector(private val multiviewTrackProbe: MultiviewTrackProbe) {
 }
 ```
 
-- [ ] **Step 6: 跑测试确认通过**
+- [x] **Step 6: 跑测试确认通过**
 
-Run: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" && ./gradlew :app:testDebugUnitTest --tests "tech.illusion.spaceplayer.library.FormatDetectorTest"`
-Expected: BUILD SUCCESSFUL，4 个测试全部 PASS。
+**实际结果**：BUILD SUCCESSFUL，4 个测试全部 PASS（中途遇到一次 mockito-core 下载的瞬时 TLS 握手失败，重试后
+成功，不是代码问题）。
 
-- [ ] **Step 7: 提交**
-
-```bash
-git add gradle/libs.versions.toml app/build.gradle.kts \
-  app/src/main/java/tech/illusion/spaceplayer/library/MultiviewTrackProbe.kt \
-  app/src/main/java/tech/illusion/spaceplayer/library/FormatDetector.kt \
-  app/src/test/java/tech/illusion/spaceplayer/library/FormatDetectorTest.kt \
-  app/src/test/java/tech/illusion/spaceplayer/library/fakes/FakeMultiviewTrackProbe.kt
-git commit -m "Stage 2 Task 2: MV-HEVC container probe heuristic + format detection pipeline"
-```
+- [x] **Step 7: 提交**（commit `4f3d3ce`）
 
 ---
 
@@ -770,14 +761,14 @@ git commit -m "Stage 2 Task 3: local persistence for format overrides and playba
 - Consumes: 无新依赖，纯 Android `ContentResolver`/`MediaStore` API。
 - Produces: `RawVideoRecord` 数据类（`uri`/`displayName`/`durationMs`/`sizeBytes`）、`VideoLibraryRepository`（`queryLibrary(): List<RawVideoRecord>`/`queryDownloads(): List<RawVideoRecord>`）——Task 5 的 `LibraryViewModel` 依赖这个签名。这个 Task 直接触碰 `ContentResolver`，不写单元测试（和 Stage 1 的 `PlaybackManager` 一样，只做构建 + 模拟器手动验证），验证步骤见 Step 3。
 
-- [ ] **Step 1: 在 `AndroidManifest.xml` 里加权限声明**
+- [x] **Step 1: 在 `AndroidManifest.xml` 里加权限声明**
 
 ```xml
 <!-- app/src/main/AndroidManifest.xml，加在 <manifest> 标签内、<application> 标签之前 -->
 <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 ```
 
-- [ ] **Step 2: 写 `VideoLibraryRepository.kt`**
+- [x] **Step 2: 写 `VideoLibraryRepository.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.library
@@ -842,21 +833,12 @@ class VideoLibraryRepository(private val context: Context) {
 }
 ```
 
-- [ ] **Step 3: 构建确认编译通过（真正的功能验证放在 Task 5，因为查询结果要靠 UI 才能看到）**
+- [x] **Step 3: 构建确认编译通过（真正的功能验证放在 Task 5，因为查询结果要靠 UI 才能看到）**
 
-```bash
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-./gradlew assembleDebug
-```
+**实际结果**：`BUILD SUCCESSFUL`。真正的查询结果正确性在 Task 9 回归里用真机截图确认了（`视频资源库`/`下载`
+两个分类分别只显示预期的文件）。
 
-Expected: BUILD SUCCESSFUL。
-
-- [ ] **Step 4: 提交**
-
-```bash
-git add app/src/main/java/tech/illusion/spaceplayer/library/VideoLibraryRepository.kt app/src/main/AndroidManifest.xml
-git commit -m "Stage 2 Task 4: MediaStore video repository + READ_MEDIA_VIDEO permission"
-```
+- [x] **Step 4: 提交**（commit `2623bf7`）
 
 ---
 
@@ -1967,48 +1949,58 @@ git commit -m "Stage 2 Task 8: playback history write-on-first-frame + preferred
 - Consumes: Task 1-8 全部产出。
 - Produces: 无新接口，回归验证 Task。
 
-- [ ] **Step 1: 全量重新构建 + 单元测试**
+- [x] **Step 1: 全量重新构建 + 单元测试**
 
-```bash
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-./gradlew clean assembleDebug :app:testDebugUnitTest
-```
+**实际结果**：`BUILD SUCCESSFUL`；实际是 6 个测试类共 **27** 个（不是草稿估的 28 个——`FilenameFormatDetectorTest`
+实际 13 个不是 14 个，Task 1 写计划时数错了）：`ExampleUnitTest`（1）+ `FilenameFormatDetectorTest`（13）+
+`FormatDetectorTest`（4）+ `PlaybackHistoryStoreTest`（2）+ `VideoPreferencesStoreTest`（3）+
+`StereoModeMappingTest`（4），全部 PASS。
 
-Expected: `BUILD SUCCESSFUL`；`FilenameFormatDetectorTest`（14）+ `FormatDetectorTest`（4）+ `VideoPreferencesStoreTest`（3）+ `PlaybackHistoryStoreTest`（2）+ Stage 1 的 `StereoModeMappingTest`（4）+ 脚手架 `ExampleUnitTest`（1）全部 PASS，共 28 个。
+- [x] **Step 2: 走查完整流程并各截一张图到 `./artifacts/stage2-regression-*.png`**
 
-- [ ] **Step 2: 走查完整流程并各截一张图到 `./artifacts/stage2-regression-*.png`**
+**实际结果（七条路径全部完成，走查手法比草稿更丰富）**：
 
-```bash
-pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
-adb -s emulator-5554 logcat -c
-pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
-```
-
-依次验证（沿用 Stage 1 Task 9 的手法：每条路径改一次临时 `LaunchedEffect`，截图后改下一条，全部走完后整体删除临时代码）：
-1. 权限未授权时的引导页 → 点"去授权" → 弹出系统权限对话框（`adb shell input tap` 对这个系统级对话框是有效的，因为它不是 spatial 容器内的 Compose UI，是系统 `PackageManager` 的原生权限弹窗）。
-2. 授权后"视频资源库"分类列出真实文件（缩略图 + 文件名 + 时长 + 格式徽标），"下载"分类只列 Download 目录下的文件。
-3. 点一个 `formatSource == DEFAULT` 的视频的"修正格式"，弹出 `SpatialPopup`，改成 180°/TB，确定后徽标立即更新。
-4. 选中一个平面视频 → 底部操作栏环境选择器可交互 → 选"海景" → 开始播放 → 沉浸播放正常（复用 Stage 1 已验证的 ECS/HUD 链路）→ 退出。
-5. 再次选中同一个视频 → 底部操作栏默认高亮"海景"（偏好环境生效）。
-6. "历史"分类里出现刚播放过的视频。
-7. "其它"分类点击触发 SAF 文件选择器，选中一个视频后自动加入选中态（能进入底部操作栏播放）。
+1. **权限门**：`stage2-regression-1-permission-gate.png`。全新卸载重装确认权限门正确显示。"去授权"按钮点不动
+   （spatial 容器内的 Compose 按钮，`adb tap` 不可靠，和 Stage 1 的已知限制一样），临时 `LaunchedEffect` 自动
+   触发。系统权限对话框弹出后，**肉眼估的坐标点了两次都没点中**，换成 `adb shell uiautomator dump` 拿精确
+   `bounds` 算出的坐标一次点中——这是本次回归里第一次踩实"截图像素位置≠真实触摸坐标空间"这条坑（详见 AGENTS.md）。
+   点击"Allow"后 App 自己的 Compose 状态没跟着更新（`dumpsys package` 已确认 `granted=true`），用
+   `am force-stop` + 重新 `launch` 兜底解决。
+2. **视频资源库/下载分类**：`stage2-regression-2-library-downloads.png`（视频资源库，`library_test.mp4`）+
+   `stage2-regression-3-downloads.png`（下载，只有 `download_test.mp4`，确认 `RELATIVE_PATH` 过滤逻辑正确）。
+3. **格式修正弹层**：`stage2-regression-4-correction-popup.png`——这是这个弹层第一次真正在设备上渲染确认
+   （Task 6/7 都只做了编译验证），`SpatialPopup`/两组 `SegmentControl`/取消确定按钮全部正确显示，无崩溃。
+4. **播放**：临时效果以"星空"环境播放 `library_test.mp4`，`adb logcat` 确认播放期间有真实解码器活动。
+5. **偏好环境持久化**：退出后没有走"再次选中看界面"这条路径（同样会撞上 spatial 容器点不动的问题），改成
+   `adb shell run-as tech.illusion.spaceplayer cat .../shared_prefs/video_preferences.xml` 直接读底层数据，
+   确认 `environment=STARRY_SKY`（这一步实际是在 Task 8 验证时做的，Task 9 沿用同一条证据链，不重复验证）。
+6. **历史分类**：`stage2-regression-5-history.png`——退出播放后临时效果自动切到"历史"分类，正确显示刚播放过的
+   `library_test.mp4`，这是历史链路第一次通过真实 UI（不是直接读 SharedPreferences）确认。
+7. **SAF"其它"**：`stage2-regression-6-saf-picker.png`（选择器正确弹出，`arrayOf("video/*")` 过滤只显示视频
+   文件）+ `stage2-regression-7-saf-selected.png`（用 `uiautomator dump` 拿到 `library_test.mp4` 卡片的
+   `bounds` 后点击两次——**GridView 的文件项第一次 tap 有时只是聚焦，需要点第二次才真正选中/返回**——确认选中后
+   自动回到主窗口且该视频进入选中态，底部操作栏出现）。
 
 ```bash
 adb -s emulator-5554 logcat -d -t 500 | grep -iE "FATAL|AndroidRuntime|tech.illusion.spaceplayer"
 ```
 
+全程七条路径均无 `FATAL`/`AndroidRuntime` 崩溃日志，只有正常的 `SpatialRuntimeService: Watchdog`/
+`AppRecordManagerService` 日志。验证完把全部临时 `LaunchedEffect` 删除，重新 `./gradlew clean assembleDebug
+:app:testDebugUnitTest` 确认干净、27 个单测依旧全部 PASS，`git status`/`git diff` 确认 `MainLibraryScreen.kt`
+和 Task 8 提交时字节相同（临时代码全部加回又全部删掉，净 diff 为零）。
+
 Expected: 七条路径都符合预期；全程无新增崩溃（只有正常的 `SpatialRuntimeService: Watchdog` 之类日志，参考 Stage 1 Task 9 的判定标准）。
 
-- [ ] **Step 3: 更新 `AGENTS.md`**
+- [x] **Step 3: 更新 `AGENTS.md`**
 
-写清楚：Stage 2 完成的范围（真实 `MediaStore`/SAF 文件库、三级格式识别流水线、手动覆盖 + 播放历史持久化、`PlaybackManager`/`PlaybackViewModel` 从"固定测试视频"改造成"真实 `VideoItem`"）、MV-HEVC 容器探测是未验证的启发式这一点、新增的 `androidx-activity-compose`/`androidx-documentfile`/`mockito-core` 依赖、构建/安装/运行命令不变、下一步是 Stage 3（字幕，设计见 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md` 第 4 节"字幕"小节）。
+**实际结果**：顶部摘要改成"Stage 1、Stage 2 均已完成"；新增 Stage 2 验证结果段落（七条路径 + 关键 bug 说明）；
+"本机环境注意事项"追加四条真实发现（uiautomator bounds 点击法、Activity Result 回调不触发重组的绕过办法、
+`AssetFileDescriptor.UNKNOWN_LENGTH` 卡死的坑、`org.json`/`Uri.parse()` 单测限制、SpatialUI 组件不要假设有
+`onClick`）；"关键文件"追加 Stage 2 新文件列表；"已用的 Spatial SDK 能力"追加 Stage 2 新用到的 SpatialUI 组件
+小节；"下一步"改成指向 Stage 3（字幕）。
 
-- [ ] **Step 4: 提交**
-
-```bash
-git add -A
-git commit -m "Stage 2 regression pass + AGENTS.md update"
-```
+- [x] **Step 4: 提交**
 
 ## Self-Review 记录（写完计划后的复查结论）
 
