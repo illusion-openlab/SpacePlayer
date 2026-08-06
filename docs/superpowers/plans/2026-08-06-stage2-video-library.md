@@ -873,7 +873,7 @@ git commit -m "Stage 2 Task 4: MediaStore video repository + READ_MEDIA_VIDEO pe
 - Consumes: `VideoLibraryRepository`（Task 4）、`FormatDetector`/`MediaExtractorMultiviewProbe`（Task 2）、`VideoPreferencesStore`（Task 3）、`VideoItem`/`FormatSource`（Task 1）。
 - Produces: `LibraryCategory` 枚举、`LibraryViewModel`（`selectedCategory`/`selectedItem`/`libraryItems`/`downloadsItems`/`selectCategory`/`selectItem`/`refreshLibrary`/`refreshDownloads`/`visibleItems`）、`MainLibraryScreen(modifier: Modifier)` Composable——Task 6/7 都会修改 `LibraryViewModel`/`MainLibraryScreen`。这个 Task 先不接"其它"分类和播放按钮（留给 Task 7），"历史"分类先显示空列表（留给 Task 8）。
 
-- [ ] **Step 1: 加 `androidx-activity-compose` 依赖声明**
+- [x] **Step 1: 加 `androidx-activity-compose` 依赖声明**
 
 ```toml
 # gradle/libs.versions.toml 的 [libraries] 段追加（不设 version.ref，让 Gradle 冲突消解对齐
@@ -887,7 +887,7 @@ androidx-activity-compose = { group = "androidx.activity", name = "activity-comp
 implementation(libs.androidx.activity.compose)
 ```
 
-- [ ] **Step 2: 写 `LibraryCategory.kt`**
+- [x] **Step 2: 写 `LibraryCategory.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.ui.library
@@ -900,7 +900,7 @@ enum class LibraryCategory(val label: String) {
 }
 ```
 
-- [ ] **Step 3: 写 `LibraryViewModel.kt`**
+- [x] **Step 3: 写 `LibraryViewModel.kt`**
 
 ```kotlin
 package tech.illusion.spaceplayer.ui.library
@@ -991,7 +991,9 @@ class LibraryViewModel(private val context: Context) {
 }
 ```
 
-- [ ] **Step 4: 写 `VideoListCard.kt`（缩略图懒加载 + 文件名 + 时长 + 格式徽标）**
+- [x] **Step 4: 写 `VideoListCard.kt`（缩略图懒加载 + 文件名 + 时长 + 格式徽标）**
+
+**实际结果**：草稿里最后那段"改成 `Modifier.clickable(onClick = ...)`"的修正直接写进了最终版本（没有先写错误版本再改），`ListItem` 本身也用 `modifier.clickable(onClick = onClick)` 接了点击手势——`ListItem` 组件本身没有 `onClick` 参数（和下面 Step 5 发现的 `SideNavigationItem` 同理）。
 
 ```kotlin
 package tech.illusion.spaceplayer.ui.library
@@ -1146,7 +1148,7 @@ import androidx.compose.foundation.layout.padding
     }
 ```
 
-- [ ] **Step 5: 写 `MainLibraryScreen.kt`（权限门 + 侧栏 + 列表，先不含底部操作栏/修正弹层，留给 Task 6/7）**
+- [x] **Step 5: 写 `MainLibraryScreen.kt`（权限门 + 侧栏 + 列表，先不含底部操作栏/修正弹层，留给 Task 6/7）**
 
 ```kotlin
 package tech.illusion.spaceplayer.ui.library
@@ -1262,9 +1264,9 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
 }
 ```
 
-注意：`SideNavigationItem` 真实签名的 `content`/`leading`/`trailing` 参数类型是 `@Composable (BoxScope.() -> Unit)`（见"关键探索结论"第 2 条），上面代码里 `content = { Text(...) }` 能编译是因为 Kotlin 允许尾随 lambda 省略 `BoxScope` 接收者的显式使用——`Text` 不需要用到 `this: BoxScope`。这一步先不接"其它"分类的点击行为（触发 SAF）和底部操作栏，`onRequestFormatCorrection` 先传空 lambda，Task 6/7 补上。
+**实际结果（和上面草稿不一样）**：`content = { Text(...) }` 这种尾随 lambda 省略 `BoxScope` 接收者的写法确实编译通过，符合预期。但草稿里给 `SideNavigationItem` 传了一个不存在的 `onClick` 参数——**`SideNavigationItem` 真实签名根本没有 `onClick`**（它只是一个带 hover/haptic 效果的 `Row`，点击手势要自己接），第一次 `./gradlew assembleDebug` 直接报编译错误 `No parameter with name 'onClick' found`。修复方式：把 `onClick = { libraryViewModel.selectCategory(category) }` 改成 `modifier = Modifier.clickable(onClick = { libraryViewModel.selectCategory(category) })`，追加 `import androidx.compose.foundation.clickable`。这一步先不接"其它"分类的点击行为（触发 SAF）和底部操作栏，`onRequestFormatCorrection` 先传空 lambda，Task 6/7 补上。
 
-- [ ] **Step 6: 构建 + 安装 + 启动 + 截图验证（真机视频库，需要先往模拟器塞几个视频文件）**
+- [x] **Step 6: 构建确认编译通过**
 
 ```bash
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
@@ -1278,11 +1280,11 @@ adb -s emulator-5554 shell am broadcast -a android.intent.action.MEDIA_SCANNER_S
 pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
 ```
 
-因为 `Main.kt` 还没接入 `MainLibraryScreen`（下一步 Task 7 才改 `Main.kt`），这一步暂时没有真正可点的入口——先跳过截图验证，改成只确认 `./gradlew assembleDebug` 编译通过；真正的模拟器截图验证放在 Task 7（`Main.kt` 接入之后，侧栏/列表/权限门才真的能在设备上看到）。
+因为 `Main.kt` 还没接入 `MainLibraryScreen`（下一步 Task 7 才改 `Main.kt`），这一步暂时没有真正可点的入口——只确认 `./gradlew assembleDebug` 编译通过；真正的模拟器截图验证放在 Task 7（`Main.kt` 接入之后，侧栏/列表/权限门才真的能在设备上看到）。
 
-Expected: `BUILD SUCCESSFUL`。
+**实际结果**：`BUILD SUCCESSFUL`（改完 `SideNavigationItem` 的 onClick 问题之后）。往模拟器塞测试视频这几条 `adb push`/`am broadcast` 命令挪到 Task 7 的模拟器验证步骤里一起做，这里没有必要重复跑。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add gradle/libs.versions.toml app/build.gradle.kts \
@@ -1995,5 +1997,7 @@ git commit -m "Stage 2 regression pass + AGENTS.md update"
 ## Self-Review 记录（写完计划后的复查结论）
 
 - **Spec 覆盖**：设计稿第 2 节（数据模型/识别流水线/文件库管理）→ Task 1/2/3/4；第 4 节主窗口布局 → Task 5/6/7；播放历史/偏好环境 → Task 8；第 4 节"沉浸内 HUD"/"180°/360°"/"播放与 dock 流程" → 沿用 Stage 1 已完成部分，Task 7 只重接入口。字幕（第 4 节最后一小节）明确不在本计划范围内（Stage 3）。
-- **未验证项**（已在对应 Task 里如实标注，不是遗漏）：MV-HEVC 容器探测准确率（Task 2，本机无真实样本文件）；`SideNavigationItem`/`ListItem` 的 `BoxScope` receiver 在尾随 lambda 里省略是否总能编译通过（Task 5 Step 5 备注里说明了原因，如果实现时报编译错误，需要把 `content = { Text(...) }` 显式换成 `content = { _: androidx.compose.foundation.layout.BoxScope -> Text(...) }` 之类的显式接收者写法）；`Button` 是否有 `enabled` 参数未经验证，Task 7 里选择了不依赖它的保守方案。
+- **未验证项**（已在对应 Task 里如实标注，不是遗漏）：MV-HEVC 容器探测准确率（Task 2，本机无真实样本文件）；`Button` 是否有 `enabled` 参数未经验证，Task 7 里选择了不依赖它的保守方案。
+- **已确认按预期工作**：`SideNavigationItem`/`ListItem` 的 `BoxScope` receiver 在尾随 lambda 里省略确实能编译通过（Task 5 Step 5 验证）。
+- **计划草稿里猜错、实现时才发现的**：`SideNavigationItem` 没有 `onClick` 参数（Task 5 Step 5，改用 `Modifier.clickable`）；`ListItem` 同理也没有 `onClick`（Task 5 Step 4，同样改用 `Modifier.clickable`）；`org.json.JSONObject`/`Uri.parse()` 在纯 JVM 单元测试里会抛 `RuntimeException`（Task 3，改用手写字符串序列化 + 全程 `String` key）。这几处都是"看源码签名没问题，但没有先写一个最小可编译验证就直接假设它有某个通用参数（onClick）"导致的——后续 Task 如果又要用一个新的 SpatialUI 组件，写代码前应该先确认它是否真的有 `onClick`，不要想当然。
 - **类型一致性**：`VideoItem`/`DetectedFormat`/`FormatSource`（Task 1）→ `FormatDetector`（Task 2）→ `VideoPreferencesStore`/`PlaybackHistoryStore`（Task 3）→ `VideoLibraryRepository`/`RawVideoRecord`（Task 4）→ `LibraryViewModel.toVideoItem`（Task 5）→ `PlaybackViewModel.startPlayback(item: VideoItem)`（Task 7）→ `historyStore`/`preferencesStore`（Task 8）全程用同一套类型和函数名，没有出现"Task 3 叫 `setFormatOverride` 但 Task 6 调用 `updateFormatOverride`"这类不一致。
