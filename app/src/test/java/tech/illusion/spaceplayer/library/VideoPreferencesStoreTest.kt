@@ -48,4 +48,25 @@ class VideoPreferencesStoreTest {
         assertEquals(Projection.HEMISPHERE_180, prefs.projectionOverride)
         assertEquals(Environment.SEASIDE, prefs.preferredEnvironment)
     }
+
+    @Test
+    fun `subtitle uri round-trips as a string`() {
+        val store = VideoPreferencesStore(InMemoryKeyValueStore())
+        val uri = fakeUri("content://media/4")
+        val subtitleUri = fakeUri("content://com.android.externalstorage.documents/document/primary%3Amovie.srt")
+        store.setSubtitleUri(uri, subtitleUri)
+        val prefs = store.get(uri)
+        assertEquals("content://com.android.externalstorage.documents/document/primary%3Amovie.srt", prefs.subtitleUri)
+    }
+
+    @Test
+    fun `setting subtitle uri preserves prior format override`() {
+        val store = VideoPreferencesStore(InMemoryKeyValueStore())
+        val uri = fakeUri("content://media/5")
+        store.setFormatOverride(uri, Projection.FLAT, StereoMode.MONO)
+        store.setSubtitleUri(uri, fakeUri("content://media/subtitle.srt"))
+        val prefs = store.get(uri)
+        assertEquals(Projection.FLAT, prefs.projectionOverride)
+        assertEquals("content://media/subtitle.srt", prefs.subtitleUri)
+    }
 }

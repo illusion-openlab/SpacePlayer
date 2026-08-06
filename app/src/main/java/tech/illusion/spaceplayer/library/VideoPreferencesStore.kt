@@ -1,6 +1,8 @@
 package tech.illusion.spaceplayer.library
 
 import android.net.Uri
+import java.net.URLDecoder
+import java.net.URLEncoder
 import tech.illusion.spaceplayer.library.storage.KeyValueStore
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.Projection
@@ -10,14 +12,18 @@ data class VideoPreferences(
     val projectionOverride: Projection? = null,
     val stereoModeOverride: StereoMode? = null,
     val preferredEnvironment: Environment? = null,
+    val subtitleUri: String? = null,
 )
 
 /**
- * 每个视频的手动格式覆盖 + 上次使用的沉浸环境，按 `uri.toString()` 做 key。
+ * 每个视频的手动格式覆盖 + 上次使用的沉浸环境 + 手动指定的字幕文件，按 `uri.toString()` 做 key。
  *
  * 序列化故意不用 `org.json.JSONObject`：Android 的单元测试 stub jar 没有真实的 `org.json` 实现
  * （不接入 Robolectric 的话会在纯 JVM 单测里抛 `RuntimeException`），这里手写一个不碰任何 Android
  * 框架类的 `key=value;key=value` 格式，纯 Kotlin stdlib，单测和真机行为完全一致。
+ *
+ * `subtitleUri` 存成 `String?` 而不是 `Uri?`，同样是为了不在 `get()` 里调用会抛异常的
+ * `Uri.parse()`——`Uri` 转换留给不参与单测的调用方（`LibraryViewModel.toVideoItem`）做。
  */
 class VideoPreferencesStore(private val storage: KeyValueStore) {
 
@@ -33,6 +39,7 @@ class VideoPreferencesStore(private val storage: KeyValueStore) {
             projectionOverride = fields[KEY_PROJECTION]?.let(Projection::valueOf),
             stereoModeOverride = fields[KEY_STEREO]?.let(StereoMode::valueOf),
             preferredEnvironment = fields[KEY_ENVIRONMENT]?.let(Environment::valueOf),
+            subtitleUri = fields[KEY_SUBTITLE]?.let { URLDecoder.decode(it, "UTF-8") },
         )
     }
 
@@ -44,11 +51,16 @@ class VideoPreferencesStore(private val storage: KeyValueStore) {
         save(uri, get(uri).copy(preferredEnvironment = environment))
     }
 
+    fun setSubtitleUri(uri: Uri, subtitleUri: Uri) {
+        save(uri, get(uri).copy(subtitleUri = subtitleUri.toString()))
+    }
+
     private fun save(uri: Uri, prefs: VideoPreferences) {
         val fields = buildList {
             prefs.projectionOverride?.let { add("$KEY_PROJECTION$ENTRY_SEPARATOR${it.name}") }
             prefs.stereoModeOverride?.let { add("$KEY_STEREO$ENTRY_SEPARATOR${it.name}") }
             prefs.preferredEnvironment?.let { add("$KEY_ENVIRONMENT$ENTRY_SEPARATOR${it.name}") }
+            prefs.subtitleUri?.let { add("$KEY_SUBTITLE$ENTRY_SEPARATOR${URLEncoder.encode(it, "UTF-8")}") }
         }
         storage.put(uri.toString(), fields.joinToString(FIELD_SEPARATOR))
     }
@@ -59,5 +71,6 @@ class VideoPreferencesStore(private val storage: KeyValueStore) {
         const val KEY_PROJECTION = "projection"
         const val KEY_STEREO = "stereo"
         const val KEY_ENVIRONMENT = "environment"
+        const val KEY_SUBTITLE = "subtitle"
     }
 }

@@ -1,6 +1,7 @@
 package tech.illusion.spaceplayer.ui.library
 
 import android.content.Context
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -13,6 +14,7 @@ import tech.illusion.spaceplayer.library.VideoLibraryRepository
 import tech.illusion.spaceplayer.library.VideoPreferencesStore
 import tech.illusion.spaceplayer.library.storage.SharedPreferencesKeyValueStore
 import tech.illusion.spaceplayer.playback.Projection
+import tech.illusion.spaceplayer.subtitle.SubtitleDiscovery
 
 /** 只在主窗口内用，不需要跨容器共享，所以不入 Koin，直接在 [MainLibraryScreen] 里 `remember`。 */
 class LibraryViewModel(private val context: Context) {
@@ -67,6 +69,10 @@ class LibraryViewModel(private val context: Context) {
     fun toVideoItem(record: RawVideoRecord): VideoItem {
         val uriPrefs = preferencesStore.get(record.uri)
         val detected = formatDetector.detect(context, record.uri, record.displayName)
+        // Uri.parse 在这里可以放心用——toVideoItem 全程没有单测覆盖，属于 VideoLibraryRepository/
+        // PlaybackManager 那一类"触碰 Android 框架、只做构建+模拟器验证"的代码。
+        val subtitleUri = uriPrefs.subtitleUri?.let(Uri::parse)
+            ?: SubtitleDiscovery.findSiblingSrt(context, record.uri)
         return VideoItem(
             uri = record.uri,
             displayName = record.displayName,
@@ -81,6 +87,7 @@ class LibraryViewModel(private val context: Context) {
                 detected.formatSource
             },
             preferredEnvironment = uriPrefs.preferredEnvironment,
+            subtitleUri = subtitleUri,
         )
     }
 }

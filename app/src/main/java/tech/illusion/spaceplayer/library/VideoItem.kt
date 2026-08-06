@@ -20,6 +20,7 @@ data class VideoItem(
     val stereoMode: StereoMode,
     val formatSource: FormatSource,
     val preferredEnvironment: Environment?,
+    val subtitleUri: Uri?,
 )
 
 /** 格式识别流水线（[FormatDetector]）某一级命中后的结果。 */
