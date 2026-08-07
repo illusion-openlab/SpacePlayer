@@ -42,7 +42,9 @@
     <string name="playback_pause">Pause</string>
     <string name="playback_play">Play</string>
     <string name="playback_panorama_auto_immersive">Panoramic video · Auto immersive</string>
-    <string name="playback_return_to_main_window">Return to main window</string>
+    <string name="playback_return_to_main_window">Return</string>
+    <string name="playback_mute">Mute</string>
+    <string name="playback_unmute">Unmute</string>
     <string name="playback_loading">Loading…</string>
     <string name="playback_load_failed">Video failed to load</string>
 </resources>

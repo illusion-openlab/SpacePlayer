@@ -739,8 +739,89 @@ capture screenshot` 在真机上直接报错拿不到截图（模拟器没有这
    - 真实 SAF 导入一个视频，确认字幕自动发现在这种场景下确实返回空、手动指定仍然可用（目前只有代码审查）。
    - 这次视觉重做也应该在真机上（不只是模拟器）用手柄实际点一遍格式筛选/网格卡片/侧栏/环境圆点选择器，确认
      手柄交互（不是 adb 模拟点击）下点击区域、hover 反馈都符合预期。
-2. **设计对齐时发现但这次没做的功能性缺口**（详见设计对齐记录）：沉浸 HUD 完全没有进度条和音量控制——Stage 1
-   计划里写的是"留给 Stage 2"，但 Stage 2/3 都没有再捡回来，`PlaybackManager.seekTo()`/`setVolume()` 都在但
-   没有 UI 入口。
+2. ~~设计对齐时发现但这次没做的功能性缺口：沉浸 HUD 完全没有进度条和音量控制~~ —— 已在 2026-08-07 补齐（进度条、
+   静音按钮），见下方记录。
 3. 如果之后有新的功能性需求（比如非目标里提到的电影院高保真美术、字幕样式），从设计稿的"非目标"章节移出、单独
    立项写新的 spec/plan，而不是默认继续加到 Stage 3 里。
+
+## 2026-08-07 HUD 面板宽度、进度条填充、返回文案、音量按钮
+
+用户反馈四点，逐一分析后一起修：面板宽度过长、进度条应该填满剩余横向空间、"返回主窗口"改为"返回"+图标、在
+靠近返回控件的分割线右侧补一个音量按钮。
+
+### 根因：`AttachmentPanel` 默认 `WRAP_CONTENT`，`fillMaxWidth()` 会撑到 2048dp 上限
+
+反编译 `core-0.13.3-sources.jar` 的 `AttachmentPanelComponent.kt` 确认：`AttachmentPanel`（`ImmersiveScene.kt`
+里 `AttachmentPanel(id = HUD_ATTACHMENT_ID) { ... }` 不传 `size` 参数）默认 `width = WRAP_CONTENT`，而
+`WRAP_CONTENT` 时原生层用 `MAX_PANEL_SIZE_DP = 2048` 作为 AT_MOST 上限（`resolveSizePx()` 源码里硬编码的常量）。
+上一轮（`4fb2d8b`）给按钮行加 `Modifier.fillMaxWidth()` 是为了让 `Spacer(weight(1f))` 有空间可分配，但这个
+`fillMaxWidth()` 是相对这个 2048dp 上限展开的，不是相对"内容自然宽度"，于是整个面板被撑到接近全屏——这才是
+"面板宽度过长"的根本原因，不是任何一次新增内容造成的。
+
+修法：给外层 `Box` 加显式 `Modifier.width(HudPanelWidth)`（当前 640dp，凭经验选的、已通过模拟器截图验证观感
+合理，不是从任何公式推导的精确值），把面板从"不受约束的 WRAP_CONTENT"变回"有界容器"，两行 `Row` 各自的
+`fillMaxWidth()`/`weight(1f)` 才会相对这个有意义的宽度展开，而不是相对 2048dp。
+
+### 进度条改用 `Modifier.weight(1f)` 真正填满剩余空间——推翻了上一轮"trailing `.size()` 总是赢"的结论
+
+反编译 `design-0.13.3-sources.jar` 的 `Slider.kt`，`SliderImpl` 内部链式是：
+
+```kotlin
+Modifier.sizeIn(minHeight = sliderSpec.sliderMinHeight())
+    .then(modifier)                                    // 调用方传入的 modifier
+    .size(width = sliderSpec.defaultComponentWidth(), height = ...)
+```
+
+上一轮（本文件更早的记录）断言"trailing `.size(width=...)` 总是赢，调用方传的宽度 modifier 不起作用"。这次照 Compose
+`Constraints.constrain()` 的真实语义重新推了一遍：`.size(width, height)` 内部用
+`incomingConstraints.constrain(Constraints.fixed(width, height))`，而 `constrain()` 是"receiver 夹住 other"——
+如果 `modifier` 传入的是一个**tight（min==max）**约束（`fillMaxWidth()`、`weight(1f)` 在 `Row(fill=true)` 下都是
+tight），夹的结果就是 tight 值本身，跟 `.size()` 里写的宽度无关。也就是说结论并不是"箱子的宽度 modifier 完全
+无效"，而是"只有 tight 约束才能覆盖，普通的 `Modifier.width(x)`（未必总是 tight，视上下文）不一定够"。这次直接
+给 `Slider` 传 `Modifier.weight(1f)`（在一个 `fillMaxWidth()` 的 `Row` 里，`weight` 默认 `fill=true`，产生 tight
+约束），模拟器截图确认进度条条真的撑满了剩余空间——推翻了上一轮的结论，以这次反编译推导+实测为准。
+
+### 分割线从 1dp 加宽到 3dp——这也解释了上一轮"一条分割线显示、一条不显示"的谜团
+
+新面板截图里两条 `HudDivider()` 完全不可见。用 Python 量了面板在最终合成截图里的实际像素宽度：640dp 的面板测出
+来只有 ~532px，即 **~0.83 px/dp**——因为 `AttachmentPanel` 是先被合成成一张纹理贴到 3D 场景里的面片上，再整体
+渲染进最终 2D 截图，这个"纹理→3D 贴图→2D 截图"的额外缩放跟 Compose 用来做 dp 布局的密度是两回事，实测比值远
+低于任何正常设备屏幕的 px/dp。1dp 的分割线在这个有效缩放下不到 1 物理像素，被抗锯齿糊掉了。这也补上了上一轮
+（`4fb2d8b`）里"两处结构完全相同的 `VerticalDivider` 一个显示一个不显示"这个当时没查出根因的谜团的最合理解释：
+不是 SDK 行为不一致，是亚像素舍入噪声（谁凑巧四舍五入到那零点几个像素，谁就多多少少显示出来）。把 `HudDivider`
+宽度从 1dp 提到 3dp 后，模拟器截图确认两条分割线稳定可见。
+
+### "返回主窗口" → "返回"
+
+`playback_return_to_main_window` 字符串值改成"返回"（英文 "Return"），保留原来的 key 名（这个 key 描述的是
+"点击后的动作"，动作没变，只是显示文案缩短了，改名字反而增加不必要的 diff）。
+
+### 新增音量静音/取消静音按钮
+
+`PlaybackManager` 把原来的 `private const val INIT_VOLUME` 改名导出成 `const val DEFAULT_VOLUME`（同一个值，
+0.8f），复用给取消静音时恢复音量用，避免魔法数字重复。`PlaybackViewModel` 新增 `isMuted`（`mutableStateOf`）+
+`toggleMute()`（静音时 `setVolume(0f)`，取消静音时 `setVolume(DEFAULT_VOLUME)`）。新增两个矢量图标
+`ic_volume_up.xml`/`ic_volume_off.xml`（跟现有 `ic_pause_bars.xml` 等一样，纯色 path，靠 `Icon()` 自己的
+`tint` 上色，`fillColor` 具体值不重要）。按钮放在第二条分割线和"返回"链接之间（`IconButtonDefaults.Small`+
+`HudChipBackground`/`HudChipContent`，跟 chip 视觉语言保持一致，不用主色，避免跟播放按钮抢视觉重量）。
+
+### 验证方法上的一个新发现：沉浸 Stage 里的 `AttachmentPanel` 内容，`uiautomator dump` 看不到
+
+在主窗口（`MainLibraryScreen`）阶段 `uiautomator dump` 能正常拿到真实 bounds（用来点选视频卡片这步仍然可靠）。
+但进入沉浸 `Stage` 之后再 dump，返回的是 `com.picoxr.launcher` 包的一个近乎空的层级（`bounds="[0,0][2160,1440]"`
+几层空 `FrameLayout`），完全看不到我们自己 `AttachmentPanel` 里的任何 Compose 节点。这意味着 HUD 上所有控件在
+沉浸模式下**没有任何可靠的 bounds 来源**，只能凭截图像素肉眼估坐标去 `adb tap`——而这次实测这种估法对播放/暂停
+这种大按钮基本能中，但对彼此靠得很近的小控件（音量按钮和"返回"链接只隔了 8dp）就不可靠了：反复在目测坐标上
+tap 音量按钮，图标始终没有切换成静音状态（同时也没有误触发旁边的"返回"，此前一次误以为点到了"返回"导致退出
+沉浸模式，事后核实其实是同一时间视频播放到头触发的自动返回，纯属巧合，跟这次 tap 无关）。最终改用最小侵入的
+临时手段验证：把 `PlaybackViewModel.isMuted` 的初始值临时改成 `true`、重新编译安装、截图确认静音图标正确渲染，
+再改回 `false`——比继续猜测坐标或者搭一次性点击脚手架更直接，且改动范围小、容易在验证完之后原样撤销确认干净。
+
+### 已知但本轮没有处理的问题（同类，不在本次范围内）
+
+- 之前记录过的"视频播放速度比真实时间快很多"的疑点这次测试中又见到了一次（`long_test.mp4` 60秒素材，实际测试
+  中不到一分钟就已经播完触发了自动返回主窗口）——跟这次 HUD 改动无关，维持"已知未解决"状态。
+- 沉浸 Stage 关闭后主窗口重新打开这一步，这次有一次截图显示既没有回到 `MainLibraryScreen` 也没有停留在 HUD，
+  而是直接看到了 PICO 系统主页（passthrough 卧室场景），等了几秒后仍是这个状态，直到手动 `am force-stop` +
+  重新 `launch` 才恢复正常。没有进一步深挖是重开时机问题还是窗口重新打开的位置问题（比如相对头部朝向的锚点在
+  多次沉浸开关后逐渐偏移），记在这里供下次遇到类似情况时参考，不建议现在就去追。

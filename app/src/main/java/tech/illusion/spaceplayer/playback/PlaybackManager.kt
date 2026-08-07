@@ -12,7 +12,9 @@ import com.pico.spatial.core.ecs.video.CypressMediaPlayerCallback
 import com.pico.spatial.core.ecs.video.CypressMediaPlayerErrorCode
 
 private const val TAG = "PlaybackManager"
-private const val INIT_VOLUME = 0.8f
+
+/** Also the volume the HUD's mute toggle restores to when unmuting. */
+const val DEFAULT_VOLUME = 0.8f
 
 class PlaybackManager(private val context: Context) {
 
@@ -79,7 +81,7 @@ class PlaybackManager(private val context: Context) {
         val afd = AssetFileDescriptor(pfd, 0, pfd.statSize)
         player.setDataSource(afd)
         afd.close()
-        player.setVolume(INIT_VOLUME)
+        player.setVolume(DEFAULT_VOLUME)
         player.prepareAsync()
     }
 

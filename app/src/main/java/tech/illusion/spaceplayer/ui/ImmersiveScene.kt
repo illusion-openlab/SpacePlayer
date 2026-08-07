@@ -99,9 +99,11 @@ fun ImmersiveScene() {
                         currentEnvironment = viewModel.currentEnvironment.value,
                         currentPositionMs = viewModel.currentPositionMs,
                         durationMs = viewModel.durationMs,
+                        isMuted = viewModel.isMuted,
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSelectEnvironment = { viewModel.switchEnvironment(it) },
                         onSeek = { viewModel.seekTo(it) },
+                        onToggleMute = { viewModel.toggleMute() },
                         onReturnToMainWindow = { returnToMainWindow() },
                     )
                 }

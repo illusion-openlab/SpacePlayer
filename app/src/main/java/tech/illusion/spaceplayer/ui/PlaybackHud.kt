@@ -59,14 +59,26 @@ private val HudChipContent = Color(0xB3FFFFFF) // design-style: fixed-figma-colo
 private val HudLinkContent = Color(0xB3FFFFFF) // design-style: fixed-figma-color HUD return-link text
 private val HudDividerColor = Color(0x33FFFFFF) // design-style: fixed-figma-color HUD group divider
 
+// AttachmentPanel defaults to WRAP_CONTENT (confirmed via decompiled core-0.13.3-sources.jar's
+// AttachmentPanelComponent.kt), which the native side measures with an AT_MOST bound of
+// MAX_PANEL_SIZE_DP (2048dp) - so any fillMaxWidth() inside an unconstrained panel stretches all
+// the way out to that bound instead of to some sensible toolbar width (this is what made the panel
+// span almost the full view after the previous alignment fix added fillMaxWidth() to the button
+// row). Giving the panel this explicit width turns it back into a bounded container, so the two
+// rows' own fillMaxWidth()/weight(1f) calls resolve against a sane number instead.
+private val HudPanelWidth = 640.dp
+
 // SpatialUI's own VerticalDivider is a one-line wrapper (Box(modifier.fillMaxHeight().width(t)
 // .background(color))) - no hover/click/haptics behavior to preserve - so a plain sized Box here
-// is equivalent, not a reimplementation, and sidesteps an observed inconsistency where the
-// built-in rendered visible in one spot of this Row but not the other (unresolved, but this Box
-// form measures/paints predictably either way).
+// is equivalent, not a reimplementation. Measured this panel's actual on-screen pixel width against
+// its dp width in an emulator screenshot: ~0.83px per dp, since the AttachmentPanel is a 2D texture
+// composited into the 3D scene rather than rendered 1:1 to the display like a normal window - a 1dp
+// divider lands under a physical pixel and gets anti-aliased away (this is almost certainly what
+// made the previous 1dp VerticalDivider attempt show up in one spot and not the other - sub-pixel
+// rounding noise, not a genuine SDK inconsistency). 3dp survives that downscale reliably.
 @Composable
 private fun HudDivider() {
-    Box(modifier = Modifier.width(1.dp).height(24.dp).background(HudDividerColor))
+    Box(modifier = Modifier.width(3.dp).height(24.dp).background(HudDividerColor))
 }
 
 @Composable
@@ -76,14 +88,17 @@ fun PlaybackHud(
     currentEnvironment: Environment,
     currentPositionMs: Long,
     durationMs: Long,
+    isMuted: Boolean,
     onPlayPause: () -> Unit,
     onSelectEnvironment: (Environment) -> Unit,
     onSeek: (Long) -> Unit,
+    onToggleMute: () -> Unit,
     onReturnToMainWindow: () -> Unit,
 ) {
     PicoTheme {
         Box(
             modifier = Modifier
+                .width(HudPanelWidth)
                 .clip(RoundedCornerShape(20.dp))
                 .backgroundMaterial(true, Material.Regular)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -147,6 +162,24 @@ fun PlaybackHud(
                     Spacer(modifier = Modifier.weight(1f))
                     HudDivider()
                     Spacer(modifier = Modifier.width(12.dp))
+                    IconButton(
+                        onClick = onToggleMute,
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = HudChipBackground,
+                            contentColor = HudChipContent,
+                        ),
+                        size = IconButtonDefaults.Small,
+                    ) {
+                        Icon(
+                            painter = painterResource(
+                                id = if (isMuted) R.drawable.ic_volume_off else R.drawable.ic_volume_up,
+                            ),
+                            contentDescription = stringResource(
+                                if (isMuted) R.string.playback_unmute else R.string.playback_mute,
+                            ),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                     Link(
                         onClick = onReturnToMainWindow,
                         colors = LinkDefaults.linkColors(contentColor = HudLinkContent),
@@ -176,7 +209,10 @@ private fun PlaybackProgressRow(
     var dragPreviewMs by remember { mutableStateOf<Long?>(null) }
     val displayedPositionMs = dragPreviewMs ?: currentPositionMs.coerceIn(0L, safeDurationMs)
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
             text = formatPlaybackTimestamp(displayedPositionMs),
             color = HudTimeTextColor,
@@ -184,6 +220,7 @@ private fun PlaybackProgressRow(
         )
         Spacer(modifier = Modifier.width(10.dp))
         Slider(
+            modifier = Modifier.weight(1f),
             value = displayedPositionMs.toFloat(),
             onValueChange = { dragPreviewMs = it.toLong() },
             valueRange = 0f..safeDurationMs.toFloat(),

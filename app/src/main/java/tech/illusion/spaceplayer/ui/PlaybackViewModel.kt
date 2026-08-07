@@ -13,6 +13,7 @@ import tech.illusion.spaceplayer.ecs.PlaybackEntityAssembler
 import tech.illusion.spaceplayer.library.PlaybackHistoryStore
 import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.library.VideoPreferencesStore
+import tech.illusion.spaceplayer.playback.DEFAULT_VOLUME
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.PlaybackManager
 import tech.illusion.spaceplayer.playback.PlaybackState
@@ -51,6 +52,14 @@ class PlaybackViewModel(
 
     val durationMs: Long
         get() = manager.duration
+
+    var isMuted by mutableStateOf(false)
+        private set
+
+    fun toggleMute() {
+        isMuted = !isMuted
+        manager.setVolume(if (isMuted) 0f else DEFAULT_VOLUME)
+    }
 
     /** Set when playback reaches the end - ImmersiveScene observes this to return to the main window. */
     var returnToMainWindowRequested by mutableStateOf(false)
