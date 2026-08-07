@@ -51,7 +51,6 @@ import tech.illusion.spaceplayer.ui.library.dotColor
 // adaptive, matching the mockup pixel-for-pixel rather than hoping the adaptive system guesses
 // the same tone the mockup did.
 private val HudTimeTextColor = Color(0x99FFFFFF) // design-style: fixed-figma-color HUD time label
-private val HudChipBackground = Color(0x1FFFFFFF) // design-style: fixed-figma-color HUD inactive chip bg
 private val HudChipContent = Color(0xB3FFFFFF) // design-style: fixed-figma-color HUD inactive chip text
 private val HudLinkContent = Color(0xB3FFFFFF) // design-style: fixed-figma-color HUD return-link text
 private val HudDividerColor = Color(0x33FFFFFF) // design-style: fixed-figma-color HUD group divider
@@ -62,10 +61,12 @@ private val HudPrimaryIconContent = Color(0xFFFFFFFF) // design-style: fixed-fig
 // IconButtons - containerColor = Color.Transparent - and let the SDK's own built-in
 // spatialHoverEffect (already part of every IconButton's modifier chain, confirmed in decompiled
 // Button.kt regardless of colors) carry the interactive feedback instead of a resting-state color.
-// Still kept for the active environment chip below, since a chip group needs some persistent (not
-// just hover-driven) way to show which one is selected - open question for a follow-up if this
-// should also go transparent.
-private val HudAccentContainer = Color(0xE6151515) // design-style: fixed-figma-color HUD active-chip fill
+// Inactive chips went the same way (Color.Transparent, no more HudChipBackground). The active chip
+// still needs a persistent (not just hover-driven) fill so the group's selection reads without
+// requiring a hover - color is a visual match to a reference screenshot of the SDK's own frosted
+// glass hover tint, eyeballed rather than sourced from an API constant (SpatialHoverEffect's actual
+// tint is applied natively, not exposed as a Kotlin Color).
+private val HudAccentContainer = Color(0xCC97A8D8) // design-style: fixed-figma-color HUD active-chip fill (glass)
 private val HudAccentContent = Color(0xFFFFFFFF) // design-style: fixed-figma-color HUD active-chip content
 
 // AttachmentPanel defaults to WRAP_CONTENT (confirmed via decompiled core-0.13.3-sources.jar's
@@ -145,7 +146,7 @@ fun PlaybackHud(
                     if (isFlatProjection) {
                         val envChipColors = ChipsDefaults.toggleableChipColors(
                             contentColor = HudChipContent,
-                            backgroundColor = HudChipBackground,
+                            backgroundColor = Color.Transparent,
                             activeContentColor = HudAccentContent,
                             activeBackgroundColor = HudAccentContainer,
                         )
@@ -169,8 +170,6 @@ fun PlaybackHud(
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
-                    HudDivider()
-                    Spacer(modifier = Modifier.width(12.dp))
                     IconButton(
                         onClick = onToggleMute,
                         colors = IconButtonDefaults.iconButtonColors(
@@ -188,7 +187,9 @@ fun PlaybackHud(
                             ),
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    HudDivider()
+                    Spacer(modifier = Modifier.width(12.dp))
                     Link(
                         onClick = onReturnToMainWindow,
                         colors = LinkDefaults.linkColors(contentColor = HudLinkContent),

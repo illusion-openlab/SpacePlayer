@@ -877,3 +877,22 @@ tap 音量按钮，图标始终没有切换成静音状态（同时也没有误�
 模拟器截图确认：播放/暂停/静音按钮静止态只剩图标本身，没有任何填充圆形背景；进度条呈现为浅灰轨道+深一点的灰色
 已播放段+白色拖动手柄，能看出播放进度但对比度比较柔和（PicoTheme 默认配色本身如此，不是本次改动引入的新问题）。
 48/48 单测，`verify-design-style.sh` 0 错误 0 警告。
+
+## 2026-08-07（再续2）分割线挪位置 + 环境 chip 也改透明+玻璃选中色
+
+用户直接回答了上一条记录里留下的"chip 要不要也透明"的问题，同时带了两张参考图：一张是当前 HUD 效果图，
+一张是系统自带 spatial hover 效果的实际渲染截图（一个圆形按钮呈现出淡紫蓝色的磨砂玻璃质感）。改了两点：
+
+1. **分割线位置**：从"chips 与静音按钮之间"挪到"静音按钮与返回链接之间"——`Row` 里的顺序从
+   `Spacer(weight) → HudDivider → Spacer → 静音IconButton → Spacer → Link` 改成
+   `Spacer(weight) → 静音IconButton → Spacer → HudDivider → Spacer → Link`。
+2. **环境选择 chip**：未选中态的 `backgroundColor` 从 `HudChipBackground`（12% 白）改成 `Color.Transparent`
+   （回答了上一条记录的开放问题：是的，chip 也要透明）；但选中态没有跟着变透明，而是换成一个新的玻璃色
+   `HudAccentContainer = Color(0xCC97A8D8)`——柔和的雪青/薰衣草蓝，视觉上比对用户给的第二张参考图（系统
+   spatial hover 效果截图）目测取色，不是从某个 API 常量算出来的精确值（反编译确认 `SpatialHoverEffect`
+   的实际着色是原生渲染层做的，Compose 侧拿不到这个颜色值，只能凭肉眼比对截图估一个足够接近的固定色）。
+   `HudChipBackground` 常量因此不再被引用，已删除。
+
+模拟器截图确认：未选中的"星空"/"海景" chip 现在只剩点+文字，没有背景色块；选中的"电影院" chip 呈现淡雪青色
+胶囊背景，视觉上与参考截图的玻璃质感比较接近；分割线确认已经在静音图标和"返回"文字之间，而不是在 chips 和
+静音图标之间。48/48 单测，`verify-design-style.sh` 0 错误 0 警告。
