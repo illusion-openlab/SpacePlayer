@@ -50,22 +50,23 @@ import tech.illusion.spaceplayer.ui.library.dotColor
 // approved mcp__visualize mockup, which specified these exact literal tones). Fixed instead of
 // adaptive, matching the mockup pixel-for-pixel rather than hoping the adaptive system guesses
 // the same tone the mockup did.
-private val HudTrackColor = Color(0x33FFFFFF) // design-style: fixed-figma-color HUD progress track
 private val HudTimeTextColor = Color(0x99FFFFFF) // design-style: fixed-figma-color HUD time label
 private val HudChipBackground = Color(0x1FFFFFFF) // design-style: fixed-figma-color HUD inactive chip bg
 private val HudChipContent = Color(0xB3FFFFFF) // design-style: fixed-figma-color HUD inactive chip text
 private val HudLinkContent = Color(0xB3FFFFFF) // design-style: fixed-figma-color HUD return-link text
 private val HudDividerColor = Color(0x33FFFFFF) // design-style: fixed-figma-color HUD group divider
+private val HudPrimaryIconContent = Color(0xFFFFFFFF) // design-style: fixed-figma-color HUD primary icon (play/pause)
 
-// Was SpacePlayerAccent (a saturated "watermelon" red shared with the library screens) - too loud
-// against this HUD's own dark glass. Swapped for a HUD-local near-black instead of literally
-// re-invoking backgroundMaterial on these shapes: IconButton/ToggleableChip/Slider each clip and
-// paint their own solid containerColor over whatever modifier the caller passes in, so a second
-// live blur pass here would fight each component's own clip shape for uncertain visual benefit. A
-// solid, mostly-opaque near-black already reads as frosted dark glass sitting on top of the panel's
-// own Material.Regular backdrop, and keeps good contrast against the lighter unselected chips/track.
-private val HudAccentContainer = Color(0xE6151515) // design-style: fixed-figma-color HUD accent (matte black glass)
-private val HudAccentContent = Color(0xFFFFFFFF) // design-style: fixed-figma-color HUD accent content
+// Two rounds of a hand-picked accent fill (a saturated red, then a matte black) both read as too
+// heavy for this glass panel. Per direction: drop the fill entirely on the play/pause and mute
+// IconButtons - containerColor = Color.Transparent - and let the SDK's own built-in
+// spatialHoverEffect (already part of every IconButton's modifier chain, confirmed in decompiled
+// Button.kt regardless of colors) carry the interactive feedback instead of a resting-state color.
+// Still kept for the active environment chip below, since a chip group needs some persistent (not
+// just hover-driven) way to show which one is selected - open question for a follow-up if this
+// should also go transparent.
+private val HudAccentContainer = Color(0xE6151515) // design-style: fixed-figma-color HUD active-chip fill
+private val HudAccentContent = Color(0xFFFFFFFF) // design-style: fixed-figma-color HUD active-chip content
 
 // AttachmentPanel defaults to WRAP_CONTENT (confirmed via decompiled core-0.13.3-sources.jar's
 // AttachmentPanelComponent.kt), which the native side measures with an AT_MOST bound of
@@ -124,8 +125,8 @@ fun PlaybackHud(
                     IconButton(
                         onClick = onPlayPause,
                         colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = HudAccentContainer,
-                            contentColor = HudAccentContent,
+                            containerColor = Color.Transparent,
+                            contentColor = HudPrimaryIconContent,
                         ),
                         size = IconButtonDefaults.Regular,
                     ) {
@@ -173,7 +174,7 @@ fun PlaybackHud(
                     IconButton(
                         onClick = onToggleMute,
                         colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = HudChipBackground,
+                            containerColor = Color.Transparent,
                             contentColor = HudChipContent,
                         ),
                         size = IconButtonDefaults.Small,
@@ -237,13 +238,9 @@ private fun PlaybackProgressRow(
                 dragPreviewMs = null
             },
             sliderSpec = SliderDefaults.Small,
-            colors = SliderDefaults.sliderColors(
-                trackColor = HudTrackColor,
-                progressColor = HudAccentContainer,
-                progressHighColor = HudAccentContainer,
-                thumbColor = HudAccentContainer,
-                thumbHighColor = HudAccentContainer,
-            ),
+            // No custom colors here per direction - SliderDefaults.sliderColors() (PicoTheme's own
+            // adaptive roles) instead of a hand-picked fixed color, matching the same "let the
+            // system handle it" call made above for the two IconButtons.
         )
         Spacer(modifier = Modifier.width(10.dp))
         Text(

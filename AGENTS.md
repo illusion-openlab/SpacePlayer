@@ -851,3 +851,29 @@ tap 音量按钮，图标始终没有切换成静音状态（同时也没有误�
 `SpacePlayerOnAccent` 的 import 和三处引用）。模拟器截图确认：播放/暂停按钮、选中的"电影院" chip、进度条已
 播放部分和拖动手柄都变成了深黑色，跟未选中 chip 的浅灰、轨道的浅灰线对比清晰，环境圆点（`dotColor()`，红/蓝/
 绿）不受影响仍然保留各自颜色。48/48 单测，`verify-design-style.sh` 0 错误 0 警告。
+
+## 2026-08-07（再续）播放/静音按钮改透明 + 进度条改用默认配色
+
+用户看了黑色玻璃方案后仍然觉得不够合适，先用一个 Workflow（4 个并行方向 + 独立评委打分）在 mcp__visualize 画板
+上渲染了"海玻璃/冰川蓝/烟熏石墨"三个候选配色供选择，但用户没有选其中任何一个，而是给了一个更简单直接的方向：
+把播放/静音按钮的容器颜色设为 `Color.Transparent`，交给 SDK 自带的 spatial hover 效果处理交互反馈；进度条不
+再自定义颜色，直接用 `SliderDefaults.sliderColors()` 默认配置。
+
+改动：
+- 播放/暂停 `IconButton`、静音 `IconButton`：`containerColor = Color.Transparent`（图标颜色保持不变，播放
+  用不透明白 `HudPrimaryIconContent`，静音沿用原来的 `HudChipContent`）。反编译确认过 `spatialHoverEffect`
+  本来就是 `BasicButton` 内部固定挂载的一部分（跟 `colors` 参数无关），所以去掉 `containerColor` 不会丢失
+  hover 反馈，只是去掉了静止态的填充色。
+- 进度条 `Slider`：整个 `colors = SliderDefaults.sliderColors(...)` 参数直接删掉，退回组件自己的默认值
+  （`PicoTheme.colorScheme` 的 `fillTertiary`/`fillSecondary`/`labelPrimaryLight` 等自适应角色）。
+
+**范围说明（这次没动的地方）**：用户原话只提到"那几个按钮"和"进度条"，没有提到环境选择器 chip 的选中态——
+`ToggleableChip` 概念上不是"按钮"，而且它的"选中态"依赖填充色做持续可见的分组选中提示（不像按钮只需要点击时
+的 hover 反馈），如果也套用 `Color.Transparent` 会导致选中态的透明度（alpha=0）比未选中态（`0x1FFFFFFF`，
+约 12% 不透明度）还要低，视觉上"选中的反而比没选中的更不显眼"，是一个真实的功能性倒退，不是单纯的美观问题。
+所以这次保留了 chip 选中态原来的深黑色（`HudAccentContainer`/`HudAccentContent`，这两个色值现在只被 chip
+引用，注释已同步更新说明用途收窄），把这个问题在回复里明确标出来，等用户下一步指示，没有自己猜。
+
+模拟器截图确认：播放/暂停/静音按钮静止态只剩图标本身，没有任何填充圆形背景；进度条呈现为浅灰轨道+深一点的灰色
+已播放段+白色拖动手柄，能看出播放进度但对比度比较柔和（PicoTheme 默认配色本身如此，不是本次改动引入的新问题）。
+48/48 单测，`verify-design-style.sh` 0 错误 0 警告。
