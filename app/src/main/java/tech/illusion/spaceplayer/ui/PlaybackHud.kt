@@ -41,8 +41,6 @@ import com.pico.spatial.ui.platform.Material
 import tech.illusion.spaceplayer.R
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.PlaybackState
-import tech.illusion.spaceplayer.ui.library.SpacePlayerAccent
-import tech.illusion.spaceplayer.ui.library.SpacePlayerOnAccent
 import tech.illusion.spaceplayer.ui.library.dotColor
 
 // This HUD floats over the video/skybox on top of a Material.Regular glass panel whose actual
@@ -58,6 +56,16 @@ private val HudChipBackground = Color(0x1FFFFFFF) // design-style: fixed-figma-c
 private val HudChipContent = Color(0xB3FFFFFF) // design-style: fixed-figma-color HUD inactive chip text
 private val HudLinkContent = Color(0xB3FFFFFF) // design-style: fixed-figma-color HUD return-link text
 private val HudDividerColor = Color(0x33FFFFFF) // design-style: fixed-figma-color HUD group divider
+
+// Was SpacePlayerAccent (a saturated "watermelon" red shared with the library screens) - too loud
+// against this HUD's own dark glass. Swapped for a HUD-local near-black instead of literally
+// re-invoking backgroundMaterial on these shapes: IconButton/ToggleableChip/Slider each clip and
+// paint their own solid containerColor over whatever modifier the caller passes in, so a second
+// live blur pass here would fight each component's own clip shape for uncertain visual benefit. A
+// solid, mostly-opaque near-black already reads as frosted dark glass sitting on top of the panel's
+// own Material.Regular backdrop, and keeps good contrast against the lighter unselected chips/track.
+private val HudAccentContainer = Color(0xE6151515) // design-style: fixed-figma-color HUD accent (matte black glass)
+private val HudAccentContent = Color(0xFFFFFFFF) // design-style: fixed-figma-color HUD accent content
 
 // AttachmentPanel defaults to WRAP_CONTENT (confirmed via decompiled core-0.13.3-sources.jar's
 // AttachmentPanelComponent.kt), which the native side measures with an AT_MOST bound of
@@ -116,8 +124,8 @@ fun PlaybackHud(
                     IconButton(
                         onClick = onPlayPause,
                         colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = SpacePlayerAccent,
-                            contentColor = SpacePlayerOnAccent,
+                            containerColor = HudAccentContainer,
+                            contentColor = HudAccentContent,
                         ),
                         size = IconButtonDefaults.Regular,
                     ) {
@@ -137,8 +145,8 @@ fun PlaybackHud(
                         val envChipColors = ChipsDefaults.toggleableChipColors(
                             contentColor = HudChipContent,
                             backgroundColor = HudChipBackground,
-                            activeContentColor = SpacePlayerOnAccent,
-                            activeBackgroundColor = SpacePlayerAccent,
+                            activeContentColor = HudAccentContent,
+                            activeBackgroundColor = HudAccentContainer,
                         )
                         Environment.entries.forEach { env ->
                             ToggleableChip(
@@ -231,10 +239,10 @@ private fun PlaybackProgressRow(
             sliderSpec = SliderDefaults.Small,
             colors = SliderDefaults.sliderColors(
                 trackColor = HudTrackColor,
-                progressColor = SpacePlayerAccent,
-                progressHighColor = SpacePlayerAccent,
-                thumbColor = SpacePlayerAccent,
-                thumbHighColor = SpacePlayerAccent,
+                progressColor = HudAccentContainer,
+                progressHighColor = HudAccentContainer,
+                thumbColor = HudAccentContainer,
+                thumbHighColor = HudAccentContainer,
             ),
         )
         Spacer(modifier = Modifier.width(10.dp))

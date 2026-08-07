@@ -825,3 +825,29 @@ tap 音量按钮，图标始终没有切换成静音状态（同时也没有误�
   而是直接看到了 PICO 系统主页（passthrough 卧室场景），等了几秒后仍是这个状态，直到手动 `am force-stop` +
   重新 `launch` 才恢复正常。没有进一步深挖是重开时机问题还是窗口重新打开的位置问题（比如相对头部朝向的锚点在
   多次沉浸开关后逐渐偏移），记在这里供下次遇到类似情况时参考，不建议现在就去追。
+
+## 2026-08-07（续）HUD 主题色从"西瓜红"换成磨砂黑玻璃
+
+用户反馈沉浸播放器的主题色太突出（"西瓜"，即 `SpacePlayerAccent = Color(0xFFE63946)` 那个饱和红），要求换成
+"玻璃材质的磨砂黑"。
+
+**范围判断**：`SpacePlayerAccent`/`SpacePlayerOnAccent` 定义在 `ui/library/SpacePlayerPalette.kt`，是资源库
+页面（网格卡片选中态、底部操作栏、格式徽标等）跟沉浸 HUD 共用的同一个 token。用户明确说的是"沉浸模式下播放器"，
+没有提资源库页面，所以没有改共享的 `SpacePlayerAccent` 本身（改了会连带影响资源库的选中态/按钮），而是在
+`PlaybackHud.kt` 本地新增了 `HudAccentContainer`/`HudAccentContent` 两个固定色，只替换 HUD 内部三处用到
+`SpacePlayerAccent`/`SpacePlayerOnAccent` 的地方（播放/暂停按钮、选中环境 chip、进度条 progress/thumb），资源
+库页面的红色强调色不受影响。
+
+**"玻璃材质"没有对小控件二次调用 `backgroundMaterial`**：反编译 `design-0.13.3-sources.jar` 确认
+`IconButton`/`ToggleableChip`/`Slider` 内部都是"调用方传入的 `modifier` → 自己的 `graphicsLayer{clip+shape}` →
+自己的 `.background(containerColor)`"这个顺序（`Button.kt` 的 `BasicButton` 可以直接看到）——如果在调用方
+`modifier` 里追加 `backgroundMaterial`，它离该组件自己的 `clip`/`shape` 有一层不确定的先后关系，容易出现虚化
+没有正确裁到圆形/胶囊形状的问题，且每个组件都要单独验证。权衡下来选择了更稳的做法：一个足够不透明的纯色深黑
+`Color(0xE6151515)`，本身叠在整个面板已有的 `Material.Regular` 磨砂玻璃背景之上，视觉上就是"磨砂玻璃面板上
+一块更深的黑色"，不需要再对小控件二次实时虚化。这跟本文件其它地方"用固定色而不是硬啃 Material 在各设备上的
+渲染差异"的既有原则一致。
+
+修改文件：`PlaybackHud.kt`（新增 `HudAccentContainer`/`HudAccentContent`，去掉 `SpacePlayerAccent`/
+`SpacePlayerOnAccent` 的 import 和三处引用）。模拟器截图确认：播放/暂停按钮、选中的"电影院" chip、进度条已
+播放部分和拖动手柄都变成了深黑色，跟未选中 chip 的浅灰、轨道的浅灰线对比清晰，环境圆点（`dotColor()`，红/蓝/
+绿）不受影响仍然保留各自颜色。48/48 单测，`verify-design-style.sh` 0 错误 0 警告。
