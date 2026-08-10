@@ -26,13 +26,19 @@ fun Projection.label(): String = stringResource(
     },
 )
 
-/** Full descriptive label, e.g. for FormatCorrectionPopup's segment control. */
+/**
+ * Compact single-line label for the bottom bar's stereo-mode SegmentControl - reuses the same
+ * short strings as [badgeLabel] (plus a non-null MONO case) rather than a descriptive phrase like
+ * "Side-by-side 3D", since a SegmentItem's Text wraps at the first space once its container is
+ * sized to intrinsic-max width, and a wrapped two-line item looks broken next to the single-line
+ * items around it.
+ */
 @Composable
-fun StereoMode.fullLabel(): String = stringResource(
+fun StereoMode.shortLabel(): String = stringResource(
     when (this) {
         StereoMode.MONO -> R.string.stereo_mono
-        StereoMode.SIDE_BY_SIDE -> R.string.stereo_sbs_full
-        StereoMode.TOP_AND_DOWN -> R.string.stereo_tb_full
+        StereoMode.SIDE_BY_SIDE -> R.string.stereo_sbs_badge
+        StereoMode.TOP_AND_DOWN -> R.string.stereo_tb_badge
         StereoMode.MULTIVIEW_MVHEVC -> R.string.stereo_mvhevc
     },
 )

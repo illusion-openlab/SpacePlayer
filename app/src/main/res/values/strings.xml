@@ -6,8 +6,6 @@
     <string name="projection_360">360°</string>
 
     <string name="stereo_mono">Mono</string>
-    <string name="stereo_sbs_full">Side-by-side 3D</string>
-    <string name="stereo_tb_full">Top-bottom 3D</string>
     <string name="stereo_mvhevc">MV-HEVC</string>
     <string name="stereo_sbs_badge">SBS</string>
     <string name="stereo_tb_badge">TB</string>

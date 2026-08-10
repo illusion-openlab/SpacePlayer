@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -84,12 +83,11 @@ private val HEADER_ROW_HEIGHT = 56.dp
 // from the same Y offset before bottom-aligning within HEADER_ROW_HEIGHT.
 private val HEADER_ROW_HEIGHT_PADDING = 16.dp
 
-// Shared height for the sidebar's "其它" action and the content column's bottom bar's primary row
+// Shared height for the sidebar's "其它" action and the content column's bottom bar
 // (environment selector + "开始播放"), so the two vertically center-align across the Row's two
-// independent Columns the same way HEADER_ROW_HEIGHT does at the top. Used as a *minimum* height
-// on the wrapping Box below, not a fixed one - LibraryBottomBar grows taller than this on its own
-// (via defaultMinSize, not this constant directly) when it also needs to show its format
-// correction row above the primary row.
+// independent Columns the same way HEADER_ROW_HEIGHT does at the top. Applied to the wrapping Box
+// at each call site; LibraryBottomBar's own Row just fillMaxSize()s to adopt whatever height its
+// parent Box is given, rather than duplicating this constant into that file.
 private val FOOTER_HEIGHT = 56.dp
 
 // Fixed sidebar width - see the comment at its usage site for why this must be explicit now that
@@ -382,7 +380,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         ScrollIndicator(state = gridState)
                     }
 
-                    Box(modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = FOOTER_HEIGHT)) {
+                    Box(modifier = Modifier.fillMaxWidth().height(FOOTER_HEIGHT)) {
                         if (libraryViewModel.selectedItem != null) {
                             LibraryBottomBar(
                                 selectedItem = libraryViewModel.selectedItem,

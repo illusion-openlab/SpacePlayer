@@ -1040,3 +1040,50 @@ SpacePlayer 无关的历史测试 App（`com.illusion.tossar`/`com.illusion.port
 同一块可视空间、抢 accessibility 焦点（导致 `uiautomator dump` 抓到风马牛不相及的另一个 App 的界面树），
 排查这类"看到的画面不对"的问题时应该先用 `pico-cli emulator stop` + `pico-cli emulator start` 重开一个
 干净的模拟器实例，而不是在一堆残留 App 里反复 force-stop 排查。
+
+## 2026-08-10 续二：改回单行布局，`IntrinsicSize.Min` 用错了应该用 `Max`
+
+上一节拆成两行的方案用户看完截图后否定了："绿色箭头所标记的这一行应该放到底部与场景选择、开始播放在同一行
+内，并且要求不要压缩文案形成两行"——箭头指的是修正格式那两个 `SegmentControl`，用户截图里能看到
+"东右3D"/"上下3D"/"MV-HEVC" 这几个立体格式选项的文字被压成了两行（"东右"换行"3D"）。这两点要求：
+（1）合并回一行，不要单独占一整行；（2）文字不能因为被压窄而换行。
+
+**发现上一节的 `IntrinsicSize.Min` 用错了**：以为 `Modifier.width(IntrinsicSize.Min)` 是"按内容需要的最小
+宽度测量、不多占空间"的意思，实际上 Compose 对可换行 `Text` 的定义是——**min intrinsic width = 最长的那个
+不可再拆分的词/字符片段的宽度**（因为文字允许换行，理论上最小宽度只需要放下最长的单个词），不是整行不换行
+文案的宽度。"左右 3D" 这种带空格、可以在空格处断行的文案，min intrinsic width 只等于"左右"或"3D"两者中较
+宽的一个——所以 `SegmentControl` 被这个偏小的宽度值锁死后，实际渲染时文字确实会在这个空格处换行，这正是
+用户截图里看到的"压缩成两行"现象。**正确的选择是 `IntrinsicSize.Max`**——它测量的是"给无限宽度时这段内容
+会占多宽"，也就是文案完全不换行时的真实宽度，既不会像不加约束那样撑满整行（因为 `SegmentControl` 内部
+`SegmentItem` 的 `weight(1f)` 只在"有确定宽度好分配"时才会生效），又不会小到逼着文字换行。
+
+**同时把立体格式的文案换成短版**：`StereoMode.fullLabel()`（"左右 3D"/"上下 3D" 这种带空格的描述性短语）
+整个删掉，改成 `StereoMode.shortLabel()`，复用跟网格卡片徽标同一套缩写字符串资源（`stereo_sbs_badge`=
+"SBS"、`stereo_tb_badge`="TB"，`stereo_mono`/`stereo_mvhevc` 保留原样），彻底避免"多词文案"这个换行诱因，
+顺便也让单行总宽度更容易放下所有元素。`stereo_sbs_full`/`stereo_tb_full` 这两个不再被引用的字符串资源
+（中英文两份 `strings.xml`）一并删除。
+
+**改动**：
+- `Labels.kt`：`StereoMode.fullLabel()` → `StereoMode.shortLabel()`（同上）。
+- `LibraryBottomBar.kt`：撤销上一节的 `Column` 两行拆分，改回单个 `Row`（跟"格式修正挪到底部栏"那次提交
+  之前的结构一致）；两个 `SegmentControl` 的宽度修饰符从 `IntrinsicSize.Min` 改成 `IntrinsicSize.Max`；
+  立体格式 `SegmentItem` 的文案从 `candidate.fullLabel()` 换成 `candidate.shortLabel()`。
+- `MainLibraryScreen.kt`：底部栏外层 `Box` 的高度撤回成固定 `.height(FOOTER_HEIGHT)`（不再需要
+  `defaultMinSize` 那种可变高度，因为不会再有两行的情况）。
+
+验证：`assembleDebug`/`testDebugUnitTest` 均 BUILD SUCCESSFUL，`verify-design-style.sh` 0 错误 0 警告。
+模拟器截图确认单行内环境 chip（电影院/星空/海景）+ 投影 SegmentControl（平面/180°/360°）+ 立体格式
+SegmentControl（单目/SBS/TB/MV-HEVC）+ 字幕状态文字 + "开始播放"按钮全部在同一行、单行不换行、
+"开始播放"按钮完整可见不被挤出窗口；点击"180°"选项确认能正确切换卡片的投影徽标和 `formatSource`
+（变成"手动指定"），交互功能正常。
+
+**验证过程中顺带发现的一个环境陷阱（记录以防下次误判为代码 bug）**：这次验证时新推的测试文件
+`quick_test.mp4` 一开始被识别成"手动指定 · 180°"而不是期望的"默认兜底 · 平面"——起初怀疑是检测逻辑出了
+新 bug，但对照 `FormatDetector.kt`/`FilenameFormatDetector.kt` 源码确认文件名根本不含任何关键词、理应走
+默认兜底路径。原因是这个模拟器实例上 `/sdcard/Movies/` 路径 + MediaStore 这套组合，在这次会话里被反复
+push 同名/不同名文件很多轮，`quick_test.mp4` 恰好复用了 MediaStore 分配给某个更早测试文件的行 ID，而
+`VideoPreferencesStore` 里当时对那个旧 ID 存过一条手动指定 180° 的偏好（`SharedPreferences` 不会因为
+`adb install -r` 或 `pico-cli emulator stop/start` 被清空）——纯粹是这个高频复用测试文件名的模拟器实例
+自己的历史包袱，不是这次改动引入的问题。换一个从没用过的新文件名（`verifyrow_0810.mp4`）重新验证后就
+正确显示"默认兜底 · 平面"了。以后在同一个模拟器上反复测格式检测逻辑时，如果结果跟预期不符，先检查是不是
+文件名撞上了旧的 `VideoPreferencesStore` 记录，而不是急着怀疑检测代码本身。
