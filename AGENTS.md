@@ -990,3 +990,53 @@ tap 音量按钮，图标始终没有切换成静音状态（同时也没有误�
 模拟器截图确认：网格卡片缩略图不再显示播放三角形图标；选中一个"默认兜底"格式的视频后，底部栏"开始播放"按钮
 左侧正确出现红色"修正格式"文字；点击卡片本身只改变选中状态（红色描边），不会跳转到沉浸播放。48/48 单测，
 `verify-design-style.sh` 0 错误 0 警告。
+
+## 2026-08-10 续：底部栏"修正格式"从单文字链接改成内联 SegmentControl，中途踩了两个坑
+
+上一节做完之后用户又提了两轮要求：
+
+1. "直接将修正格式的选项放到底部栏处，改为使用菜单选项的方式进行选择"——第一次理解成了字面意思，用
+   `Menu`/`MenuItem`（反编译 `design-0.13.3-sources.jar` 确认了这两个组件的真实签名）做了一个"点击'修正
+   格式'按钮 → 弹出下拉菜单选具体类型"的实现，在模拟器上构建+截图验证过确实能用。
+2. 但用户看到后明确否定了这个方向："修正格式不要只列一个按钮，要把当前的可选类型摆在那一行内"——也就是说
+   "菜单选项"指的不是 SDK 里那个字面意义上的 `Menu` 下拉组件，而是"所有可选项直接摆出来，跟环境选择器那几个
+   chip 一样，不要收在一次点击背后"。于是把 `Menu`/`MenuItem`/`menuExpanded` 状态整段删掉，换成两个内联的
+   `SegmentControl`（投影 Projection + 立体格式 StereoMode），跟已删除的 `FormatCorrectionPopup.kt` 用的是
+   同一个组件，只是直接摆在底部栏这一行里，不再收在弹层/菜单背后。
+
+**踩坑 1——`SegmentControl` 会偷偷吃掉整行宽度**：把两个 `SegmentControl` 和字幕状态文字都塞进同一个
+`Row` 后，模拟器截图显示第一个 `SegmentControl`（投影）的灰色背景胶囊铺满了几乎整行，第二个
+`SegmentControl`（立体格式）和字幕文字完全看不到——一度以为是空间不够要做取舍。反编译
+`SegmentControls.kt` 源码确认了根因：`SegmentItem` 内部用的是 `Modifier.weight(1f)`（在 `SegmentControl`
+自己包的那层 `Row` 里），而 Compose 的 `Row` 只要有一个子项用了 `weight()`，这个 `Row` 自己就会占满收到的
+全部可用宽度（不管它自己的 modifier 有没有写 `fillMaxWidth()`）——所以只要 `SegmentControl` 不显式限制自己
+的宽度，摆在别的 `Row` 里当非 weighted 的普通子项时，它会把同一行里排在它后面的所有兄弟节点全部挤出可视
+区域。**修复**：给每个 `SegmentControl` 加 `Modifier.width(IntrinsicSize.Min)`，强制它按自己内容的最小
+真实宽度测量，而不是撑满可用空间。加完之后两个 `SegmentControl` 才第一次同时正确显示。
+
+**踩坑 2——就算宽度修好了，投影(3项)+立体格式(4项)+字幕文字+环境chip+开始播放按钮全部塞一行仍然会超出
+窗口右边缘**：宽度修复后再截图，虽然两个 `SegmentControl` 各自不再互相挤占，但连同环境 chip
+（影院/星空/海滩）和"开始播放"按钮一起放进同一行时，整行内容总宽度还是超过了窗口本身的宽度——"开始播放"
+按钮被直接挤到窗口右边缘之外，完全看不到（这是真实的可用性问题，不是截图取景问题：按钮消失意味着用户在这
+种情况下点不到"开始播放"）。**修复**：把 `LibraryBottomBar` 从单个 `Row` 改成 `Column`，拆成两行——
+上面一行只在 `formatSource == FormatSource.DEFAULT` 时出现，放两个 `SegmentControl` + 字幕状态文字；
+下面一行始终显示（选中了任意视频就会显示），放环境 chip / "全景·自动沉浸播放"提示文字 + "开始播放"按钮，
+高度固定为 `PRIMARY_ROW_HEIGHT = 56.dp`（跟侧边栏"其它"按钮对齐的老逻辑不变）。`MainLibraryScreen.kt` 里
+包裹底部栏的 `Box` 相应从固定 `.height(FOOTER_HEIGHT)` 改成 `.defaultMinSize(minHeight = FOOTER_HEIGHT)`——
+不需要修正格式时保持原来的单行高度（不影响网格区域可用空间），需要两行时能自动长高，不会裁切内容。
+
+验证：`./gradlew assembleDebug` / `testDebugUnitTest` 均 BUILD SUCCESSFUL；`verify-design-style.sh` 0 错误
+0 警告；模拟器上选中一个 `formatSource=DEFAULT` 的平面视频后截图确认——上面一行的"平铺/180°/360°"投影
+SegmentControl、"单眼/侧双3D/上下3D/MV-HEVC"立体格式 SegmentControl、"字幕未设置"文字全部完整可见，互不
+挤占；下面一行"影院/星空/海滩"环境 chip 和"开始播放"按钮也完整可见，按钮不再被挤出窗口。
+
+**这次连带发现的环境教训（补充到"本机环境注意事项"）**：这轮验证过程中模拟器多次出现"窗口离摄像机的远近/
+取景在两次截图之间自己变了"的情况（同一个 app 窗口，字体/整体大小在截图里忽大忽小，两侧内容被屏幕物理边缘
+裁掉而不是窗口自己的边缘裁掉）——这跟"内容溢出窗口内部"是两个完全不同的现象，肉眼分辨的关键是看窗口自己的
+圆角边框是否完整出现在截图里：如果圆角边框整个都在，说明是内部布局溢出（真 bug）；如果圆角边框本身都被切
+没了，说明是取景/相机距离问题（环境噪声，不是代码问题）。另外这次会话还发现这个模拟器上残留了好几个跟
+SpacePlayer 无关的历史测试 App（`com.illusion.tossar`/`com.illusion.portalcantoss`/
+`tech.illusion.boxdepthpoc`/`com.pxr.scenarioprovider` 等），它们的悬浮面板会跟 SpacePlayer 的窗口抢占
+同一块可视空间、抢 accessibility 焦点（导致 `uiautomator dump` 抓到风马牛不相及的另一个 App 的界面树），
+排查这类"看到的画面不对"的问题时应该先用 `pico-cli emulator stop` + `pico-cli emulator start` 重开一个
+干净的模拟器实例，而不是在一堆残留 App 里反复 force-stop 排查。

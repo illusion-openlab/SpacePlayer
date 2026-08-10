@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -69,7 +70,6 @@ import tech.illusion.spaceplayer.R
 import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
 import tech.illusion.spaceplayer.library.PlaybackHistoryStore
 import tech.illusion.spaceplayer.library.RawVideoRecord
-import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.Projection
 import tech.illusion.spaceplayer.ui.PlaybackViewModel
@@ -84,11 +84,12 @@ private val HEADER_ROW_HEIGHT = 56.dp
 // from the same Y offset before bottom-aligning within HEADER_ROW_HEIGHT.
 private val HEADER_ROW_HEIGHT_PADDING = 16.dp
 
-// Shared height for the sidebar's "其它" action and the content column's bottom bar
+// Shared height for the sidebar's "其它" action and the content column's bottom bar's primary row
 // (environment selector + "开始播放"), so the two vertically center-align across the Row's two
-// independent Columns the same way HEADER_ROW_HEIGHT does at the top. Applied to the wrapping Box
-// at each call site; LibraryBottomBar's own Row just fillMaxSize()s to adopt whatever height its
-// parent Box is given, rather than duplicating this constant into that file.
+// independent Columns the same way HEADER_ROW_HEIGHT does at the top. Used as a *minimum* height
+// on the wrapping Box below, not a fixed one - LibraryBottomBar grows taller than this on its own
+// (via defaultMinSize, not this constant directly) when it also needs to show its format
+// correction row above the primary row.
 private val FOOTER_HEIGHT = 56.dp
 
 // Fixed sidebar width - see the comment at its usage site for why this must be explicit now that
@@ -107,8 +108,6 @@ private fun LibraryCategory.iconRes(): Int = when (this) {
 fun MainLibraryScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val libraryViewModel = remember { LibraryViewModel(context) }
-
-    var itemPendingCorrection by remember { mutableStateOf<VideoItem?>(null) }
 
     val navigator = LocalSpatialNavigator.current
     val coroutineScope = rememberCoroutineScope()
@@ -140,14 +139,19 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
     val subtitleLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
-        val item = itemPendingCorrection
+        val item = libraryViewModel.selectedItem
         val name = uri?.let { DocumentFile.fromSingleUri(context, it)?.name }
         if (uri != null && item != null && name?.endsWith(".srt", ignoreCase = true) == true) {
             context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             libraryViewModel.preferencesStore.setSubtitleUri(item.uri, uri)
-            itemPendingCorrection = item.copy(subtitleUri = uri)
             libraryViewModel.refreshLibrary()
             libraryViewModel.refreshDownloads()
+            // selectedItem is an independent snapshot, not derived from libraryItems/downloadsItems -
+            // re-select the freshly refreshed copy so the bottom bar's menu reflects the new
+            // subtitle status immediately instead of showing the pre-pick snapshot.
+            (libraryViewModel.libraryItems + libraryViewModel.downloadsItems)
+                .find { it.uri == item.uri }
+                ?.let { libraryViewModel.selectItem(it) }
         }
     }
 
@@ -378,15 +382,22 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         ScrollIndicator(state = gridState)
                     }
 
-                    Box(modifier = Modifier.fillMaxWidth().height(FOOTER_HEIGHT)) {
+                    Box(modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = FOOTER_HEIGHT)) {
                         if (libraryViewModel.selectedItem != null) {
                             LibraryBottomBar(
                                 selectedItem = libraryViewModel.selectedItem,
                                 selectedEnvironment = selectedEnvironment,
                                 onSelectEnvironment = { selectedEnvironment = it },
-                                onRequestFormatCorrection = {
-                                    libraryViewModel.selectedItem?.let { itemPendingCorrection = it }
+                                onFormatChange = { projection, stereoMode ->
+                                    val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
+                                    libraryViewModel.preferencesStore.setFormatOverride(item.uri, projection, stereoMode)
+                                    libraryViewModel.refreshLibrary()
+                                    libraryViewModel.refreshDownloads()
+                                    (libraryViewModel.libraryItems + libraryViewModel.downloadsItems)
+                                        .find { it.uri == item.uri }
+                                        ?.let { libraryViewModel.selectItem(it) }
                                 },
+                                onPickSubtitle = { subtitleLauncher.launch(arrayOf("*/*")) },
                                 onStartPlayback = {
                                     val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
                                     val itemToPlay = if (item.projection == Projection.FLAT) {
@@ -401,22 +412,6 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         }
                     }
                 }
-            }
-
-            itemPendingCorrection?.let { item ->
-                FormatCorrectionPopup(
-                    initialProjection = item.projection,
-                    initialStereoMode = item.stereoMode,
-                    hasSubtitle = item.subtitleUri != null,
-                    onDismissRequest = { itemPendingCorrection = null },
-                    onConfirm = { projection, stereoMode ->
-                        libraryViewModel.preferencesStore.setFormatOverride(item.uri, projection, stereoMode)
-                        libraryViewModel.refreshLibrary()
-                        libraryViewModel.refreshDownloads()
-                        itemPendingCorrection = null
-                    },
-                    onPickSubtitle = { subtitleLauncher.launch(arrayOf("*/*")) },
-                )
             }
         }
     }
