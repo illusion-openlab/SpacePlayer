@@ -372,7 +372,6 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                     item = item,
                                     selected = libraryViewModel.selectedItem?.uri == item.uri,
                                     onClick = { libraryViewModel.selectItem(item) },
-                                    onRequestFormatCorrection = { itemPendingCorrection = item },
                                 )
                             }
                         }
@@ -385,6 +384,9 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                 selectedItem = libraryViewModel.selectedItem,
                                 selectedEnvironment = selectedEnvironment,
                                 onSelectEnvironment = { selectedEnvironment = it },
+                                onRequestFormatCorrection = {
+                                    libraryViewModel.selectedItem?.let { itemPendingCorrection = it }
+                                },
                                 onStartPlayback = {
                                     val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
                                     val itemToPlay = if (item.projection == Projection.FLAT) {

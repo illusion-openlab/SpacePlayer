@@ -926,3 +926,67 @@ tap 音量按钮，图标始终没有切换成静音状态（同时也没有误�
 合成后的立体视差观感是否正常"这两点仍然没有被证实，需要真人戴上真机头显实际看一遍才能彻底验证。测试文件已经
 留在模拟器的 `/sdcard/Movies/` 下（`stereo_sbs_test.mp4`/`stereo_tb_test.mp4`），下次可以直接复用，或者
 `adb push` 到真机 B3110 上用同样文件走一遍头显实测。
+
+## 2026-08-10 排查中：沉浸模式返回主窗口偶发不弹出（未解决，先记录进展）
+
+真机上用户反馈：视频**自动播放完毕**触发返回主窗口时，主窗口没有弹出来（怀疑崩溃）。抓真机 logcat 排查：
+
+- **不是崩溃**：进程全程同一个 PID，logcat 里没有 `FATAL EXCEPTION`。
+- **系统层证据**：Stage 销毁的那一刻，系统自己的 WindowManagerService（不是我们的代码）打出
+  `Failed looking up window session=Session{...}` / `setOnBackInvokedCallback(): No window state for
+  package:tech.illusion.spaceplayer` / `SpatialAudioHelper: can not get attached window`——系统那一刻
+  确认已经找不到这个 app 的任何窗口了。
+- **规律**：那次事故是连续开关了 3 轮沉浸模式都正常（每轮日志里 Stage 销毁后紧接着都能看到对称的
+  "SpacePlayerMainWindow ... life=create"），第 4 轮才卡住，之后等了近 20 秒也没有任何后续。
+- **反编译 SDK 源码发现的真实线程行为**：`CypressMediaPlayer.registerCypressMediaPlayerCallback()` 里
+  `runOnScheduleThread` 包的是**注册**这个动作本身，`onCompleted()`/`onPrepared()` 等回调方法被原生层调用时
+  完全没有线程切换包装——直接在原生解码线程上调用。
+- **加诊断日志（写文件而不是 `Log`，见下面"本机环境注意事项"）验证结果**：`onCompleted()` 原生回调确实在
+  非主线程（`Thread-23`）触发，`returnToMainWindowRequested = true` 也是在这个线程写的；但 Compose 在 18ms
+  内正确把状态传播到了主线程的 `LaunchedEffect`，后续 `exitImmersive()`→`closeStage()`→`openWindowContainer()`
+  全部在主线程正常执行完，**且这一次主窗口确实正常弹出来了**。
+- **当前结论（未最终定性）**：单独测一次"自动播放完成→返回"不会必现，说明这不是简单的"后台线程写状态"就能
+  解释的确定性 bug；更像是短时间内连续切换沉浸模式/主窗口若干轮之后，系统底层（PICO SDK 原生层或 Android
+  WindowManagerService）的某个状态才会出问题，是间歇性的时序竞态，且失败点在我们自己的 Kotlin 代码调用
+  `openWindowContainer()` **成功返回之后**的更底层——不是能靠改我们代码逻辑直接修的问题。
+- **下一步（已经请用户帮忙复现，还没有结果）**：连续播放多个视频、每个都自动播完触发返回，重复 4-5 轮，
+  一旦复现就立刻抓完整诊断轨迹对比每轮之间的差异（比如原生回调线程是不是每次都新建、有没有累积不释放的
+  东西）。
+
+**本机环境注意事项（新增一条）**：这次排查里，`PlaybackManager`/`PlaybackViewModel`/`ImmersiveScene` 里加的
+`android.util.Log` 调用又一次没有在真机 logcat 里出现过（同一个"Log 调用有时候就是不出现在 logcat 里"的
+诡异现象这次会话至少第三次遇到，仍然没有查清根因）。这次改用直接写文件（`context.getExternalFilesDir(null)`
+下的 `thread_debug.txt`，配合 `adb pull /sdcard/Android/data/tech.illusion.spaceplayer/files/thread_debug.txt`）
+绕开这个问题，完全不依赖 logcat，验证下来是可靠的——以后需要在真机上做类似的"这段代码到底有没有执行/在哪个
+线程执行"这种确定性诊断时，优先用写文件这个办法，不要指望 `Log.e`/`Log.i` 一定能在 logcat 里看到。
+
+**这轮排查在代码里留下的临时诊断代码还没有清理**（`PlaybackManager.kt`/`PlaybackViewModel.kt`/
+`ImmersiveScene.kt` 里的 `thread_debug.txt` 写入调用），因为问题还没有复现/解决，故意保留着等下一次复现时
+用——不要在这几个文件的 diff 里看到这些"TEMP DEBUG"注释就当成遗留垃圾直接删掉，先确认这个问题是否已经解决。
+
+## 2026-08-10 资源库交互调整：格式修正挪到底部栏，去掉卡片上的播放视觉暗示
+
+用户反馈两点：
+1. "格式修正"入口应该放到主窗口底部（"开始播放"旁边）。
+2. 用户测试时发现："选中片源中心可直接播放，跳过下面的场景选择、修正步骤"——不应该允许点击片源直接播放。
+
+审查 `MainLibraryScreen.kt`/`VideoGridCard.kt` 源码：卡片的整体点击事件 (`onClick = { selectItem(item)
+}`) 从来就只是"选中"，没有代码路径会直接调用 `startPlayback()`——`selectItem()` 本身也没有任何副作用。但
+卡片缩略图中间确实有一个纯装饰性的圆形播放三角形图标（没有绑定任何点击事件），视觉上很容易让人以为"点这里
+就能直接播放"。没能在真机上复现"点击直接播放"这个具体路径（问题反馈时手边的真机连接已断开，后续也没能重新
+接上验证），所以这次改动是照用户描述的**意图**实现（点击卡片永远只应该是选中，不应该有任何暗示"点击=播放"
+的视觉/交互），而不是确认修复了一个已定位根因的具体 bug——如果后续用户在新版本上仍然遇到"点击直接播放"，
+需要重新用真机 logcat/日志排查，不能假设这次改动已经解决。
+
+改动：
+- `VideoGridCard.kt`：删除缩略图中间的装饰性播放三角形图标；删除卡片内联的"修正格式"文字入口和
+  `onRequestFormatCorrection` 参数（格式判断为 `FormatSource.DEFAULT` 时才出现这条，逻辑原样保留，只是
+  搬到了新位置）。
+- `LibraryBottomBar.kt`：新增 `onRequestFormatCorrection` 回调参数，在"开始播放"按钮左侧、环境选择器右侧
+  加一条同款式的"修正格式"文字链接，仅当 `selectedItem?.formatSource == FormatSource.DEFAULT` 时显示。
+- `MainLibraryScreen.kt`：`itemPendingCorrection` 状态和 `FormatCorrectionPopup` 弹层本身不变，只是触发源
+  从 `VideoGridCard` 的回调改成 `LibraryBottomBar` 的回调。
+
+模拟器截图确认：网格卡片缩略图不再显示播放三角形图标；选中一个"默认兜底"格式的视频后，底部栏"开始播放"按钮
+左侧正确出现红色"修正格式"文字；点击卡片本身只改变选中状态（红色描边），不会跳转到沉浸播放。48/48 单测，
+`verify-design-style.sh` 0 错误 0 警告。

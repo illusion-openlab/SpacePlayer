@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,28 +27,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pico.spatial.ui.design.Badge
 import com.pico.spatial.ui.design.BadgeDefaults
-import com.pico.spatial.ui.design.Icon
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import tech.illusion.spaceplayer.R
-import tech.illusion.spaceplayer.library.FormatSource
 import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.ui.badgeLabel
 import tech.illusion.spaceplayer.ui.label
 
 private const val THUMBNAIL_SIZE_PX = 480
 
-// Reserves enough height for title + metadata + the optional "修正格式" line so cards in the same
-// grid row line up evenly regardless of whether a given item shows that third line.
+// Reserves enough height for title + metadata so cards in the same grid row line up evenly.
 private val INFO_BLOCK_MIN_HEIGHT = 96.dp
 
 private fun formatDuration(durationMs: Long): String {
@@ -70,7 +62,6 @@ fun VideoGridCard(
     item: VideoItem,
     selected: Boolean,
     onClick: () -> Unit,
-    onRequestFormatCorrection: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -161,20 +152,6 @@ fun VideoGridCard(
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(SpacePlayerTextPrimary.copy(alpha = 0.55f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_play_triangle),
-                    contentDescription = null,
-                    tint = SpacePlayerOnAccent,
-                )
-            }
         }
 
         Column(modifier = Modifier.fillMaxWidth().heightIn(min = INFO_BLOCK_MIN_HEIGHT).padding(12.dp)) {
@@ -189,24 +166,6 @@ fun VideoGridCard(
                 style = PicoTheme.typography.bodySmall.copy(fontSize = 12.sp),
                 modifier = Modifier.padding(top = 4.dp),
             )
-
-            // "修正格式"入口只在纯兜底猜测时出现，见设计稿第 2 节。
-            if (item.formatSource == FormatSource.DEFAULT) {
-                val correctionInteractionSource = remember { MutableInteractionSource() }
-                Text(
-                    text = stringResource(R.string.format_popup_title),
-                    color = SpacePlayerAccent,
-                    style = PicoTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .clickable(
-                            interactionSource = correctionInteractionSource,
-                            indication = LocalIndication.current,
-                            onClick = onRequestFormatCorrection,
-                        )
-                        .controllerHapticFeedback(interactionSource = correctionInteractionSource),
-                )
-            }
         }
     }
 }

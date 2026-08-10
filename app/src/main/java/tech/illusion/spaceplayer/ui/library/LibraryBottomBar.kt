@@ -1,6 +1,9 @@
 package tech.illusion.spaceplayer.ui.library
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -20,7 +24,9 @@ import com.pico.spatial.ui.design.ChipsDefaults
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.design.ToggleableChip
+import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import tech.illusion.spaceplayer.R
+import tech.illusion.spaceplayer.library.FormatSource
 import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.Projection
@@ -31,6 +37,7 @@ fun LibraryBottomBar(
     selectedItem: VideoItem?,
     selectedEnvironment: Environment,
     onSelectEnvironment: (Environment) -> Unit,
+    onRequestFormatCorrection: () -> Unit,
     onStartPlayback: () -> Unit,
 ) {
     // fillMaxSize (not fillMaxWidth) so this Row adopts whatever fixed height its parent Box is
@@ -72,6 +79,26 @@ fun LibraryBottomBar(
         }
 
         Spacer(modifier = Modifier.weight(1f))
+
+        // "修正格式"入口只在纯兜底猜测时出现，见设计稿第 2 节 - moved here from each grid card so
+        // it sits next to "开始播放" as one deliberate pre-playback step, rather than living inside
+        // the card's own click target (which only ever selects the item, never plays it directly).
+        if (selectedItem?.formatSource == FormatSource.DEFAULT) {
+            val correctionInteractionSource = remember { MutableInteractionSource() }
+            Text(
+                text = stringResource(R.string.format_popup_title),
+                color = SpacePlayerAccent,
+                style = PicoTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                modifier = Modifier
+                    .padding(end = 20.dp)
+                    .clickable(
+                        interactionSource = correctionInteractionSource,
+                        indication = LocalIndication.current,
+                        onClick = onRequestFormatCorrection,
+                    )
+                    .controllerHapticFeedback(interactionSource = correctionInteractionSource),
+            )
+        }
 
         Button(
             onClick = onStartPlayback,
