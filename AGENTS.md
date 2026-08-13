@@ -1087,3 +1087,140 @@ push 同名/不同名文件很多轮，`quick_test.mp4` 恰好复用了 MediaSto
 自己的历史包袱，不是这次改动引入的问题。换一个从没用过的新文件名（`verifyrow_0810.mp4`）重新验证后就
 正确显示"默认兜底 · 平面"了。以后在同一个模拟器上反复测格式检测逻辑时，如果结果跟预期不符，先检查是不是
 文件名撞上了旧的 `VideoPreferencesStore` 记录，而不是急着怀疑检测代码本身。
+
+## 2026-08-10 续三：沉浸 HUD 里也能修正格式（投影/立体格式热切换，不中断播放）
+
+用户要求"播放 HUD 中应同样支持格式修正"，并明确两点：修正栏要和场景选择器**放在同一行**（不要单独占一行）；
+播放中改投影要**热切换、保留进度**。
+
+### 先反编译确认可行性，再动手
+
+- `VideoMaterial.setDimensionMode(VideoDimensionMode)` 是**公开稳定 API**（`core-0.13.3-sources.jar`，无
+  `@ExperimentalSpatialApi`，内部自己 `runOnScheduleThread`，线程安全）——立体格式可以直接热改，不用重建实体。
+- `VideoPlayerComponent` 有 `setMesh()`/`setMaterial()`，但**只有 `getMesh()` 没有 `getMaterial()`**——所以
+  `VideoMaterial` 的引用必须由 app 侧自己留着，这就是 `PlaybackEntityAssembler` 两个 assemble 函数改成返回
+  `VideoMaterial` 的原因。
+- 投影切换没走 `setMesh()`，而是沿用项目原有结构：三个视频实体（银幕/半球/球体）本来就共用同一个
+  `manager.player`，切换只改 `enabled`（首次用到时才 assemble）。
+
+**这条推翻了设计稿第 1 节的一条约束**："`ScreenEntity`/`SphereEntity` 二选一 enabled，由视频的 `projection`
+决定，播放期间不切换"。那条约束当时是为简化架构自己加的，不是 SDK 限制。设计稿那句应该改写成"投影可在播放中
+热切换，播放器不重建"，否则下次读 spec 的人会按旧约束否掉这个功能。
+
+### 改动
+
+- **新增 `ui/FormatMenuButton.kt`**：把原来私有在 `LibraryBottomBar.kt` 里的 pill+`Menu` 组件抽出来共用，
+  加 `FormatMenuButtonColors`/`FormatMenuButtonDefaults.libraryColors()`——资源库用不透明卡片色（默认值），
+  HUD 传玻璃色（`HudPillContainer`/`HudPillBorder`）。同一处修正逻辑、两处入口，形态一致。
+- **`PlaybackViewModel`**：`startPlayback` 里那段三分支 `when(projection)` 抽成 `applyProjection(projection,
+  dimensionMode)`，新增 `correctFormat(projection, stereoMode)` 复用它；`isFlatProjection` 这个跟
+  `currentProjection` 重复的状态删掉，改成 `currentProjection`/`currentStereoMode` 两个 Compose 状态（HUD 的
+  两个下拉直接显示它们，`== FLAT` 同时用来决定要不要显示环境选择器）；`screenAssembled`/`sphereAssembled`/
+  `hemisphereAssembled` 三个 flag 换成 `screenMaterial`/`sphereMaterial`/`hemisphereMaterial` 是否为 null
+  （引用本来就要留，不需要再多三个布尔量）。
+- **顺手修掉一个既有 bug**：原来 `dimensionMode` 只在实体第一次 assemble 时传进 `VideoMaterial`，而实体
+  assemble 一次就长期存活、跨多次播放复用——所以**第二个视频如果立体格式不同，会继续用第一个视频的
+  dimensionMode**。现在 `applyProjection` 每次都对目标实体的 material 重新 `setDimensionMode()`。
+- **`PlaybackHud`**：参数 `isFlatProjection: Boolean` 换成 `currentProjection`/`currentStereoMode` +
+  `onCorrectFormat`，控制行在环境 chip 之后加一条 `HudDivider()` 再放两个 `FormatMenuButton`——分组语义是
+  "环境 + 格式都是'这个视频怎么呈现'，两端的播放/静音/返回才是操作播放本身"。
+- **`MainLibraryScreen`**：新增一个 `LaunchedEffect(playbackViewModel.isImmersive.value)`，退出沉浸时
+  重新 `refreshLibrary()`/`refreshDownloads()` 并按 uri 重选当前项——HUD 里改的格式虽然已经写进
+  `VideoPreferencesStore`，但网格渲染的是上次刷新时的 `VideoItem` 快照，不刷新徽标不会变。
+
+### 验证（模拟器 emulator-5554，API 36）
+
+`./gradlew assembleDebug testDebugUnitTest` 均 BUILD SUCCESSFUL，48/48 单测（0 failure 0 error），
+`verify-design-style.sh app/src/main` 0 error 0 warning。设备证据：
+
+1. **单行布局不溢出**（这是这次唯一真正的风险点，原先估算 640dp 面板只剩不到 30dp 余量）：平面态截图
+   `./artifacts/hudfmt-24-flat-row.png` 里 `⏸ | ●电影院 ●星空 ●海景 | 平面▾ 单目▾ … 🔊 | 返回←` 全部在一行内
+   完整可见，"返回"没有被挤出面板、文案没有换行；全景态（`hudfmt-21`）是 `⏸ | 全景视频·自动沉浸 | 180▾ SBS▾ …`。
+   **没有加宽面板**，`HudPanelWidth` 仍是 640dp。
+2. **热切换保留进度**（HUD 控件在沉浸 Stage 里没法用 adb 可靠点击，按本文件既有办法临时加 `LaunchedEffect`
+   定时调 `correctFormat`，并把每次切换前后的 `positionMs`/`state` 写进 `fmt_verify.txt`，验证完已删除）：
+   - 180°/SBS → 平面/单目：positionMs 9330 → 14340，state 全程 `PLAYING`
+   - 平面/单目 → 360°：9962 → 12044，`PLAYING`
+   - 360° → 180°/SBS：20044 → 22103，`PLAYING`
+   三次切换都没有回到 0、没有 `PREPARING`，`adb logcat -b crash` 全程空——**同一个 `CypressMediaPlayer` 同时被
+   多个 `VideoPlayerComponent` 持有这件事，实测是可行的**（这是改之前唯一没底的地方，现在有实测结论了）。
+3. **持久化 + 回到资源库同步**：设备上 `shared_prefs/video_preferences.xml` 里
+   `content://media/external/video/media/121` = `projection=HEMISPHERE_180;stereo=SIDE_BY_SIDE`（HUD 改的）；
+   干净重装后启动，资源库卡片显示"180° · SBS"+"手动指定"（`hudfmt-30-library-after.png` 对应的 uiautomator dump）。
+4. **没有验证到的部分**：① 用手柄/射线**真的点** HUD 上这两个 pill 并在弹出的 `Menu` 里选一项——沉浸 Stage 里的
+   `AttachmentPanel` 内容没有 uiautomator bounds，adb 点不到，所以"点击能否命中、`Menu` 会不会被面板边界裁掉"
+   只能真机手柄实测；上面的功能链路是绕过 UI 直接调 `correctFormat` 验的。② 360° 那一态没拿到一张能看清
+   pill 文字是"360°"的截图（只有 `fmt_verify.txt` 的状态记录），180°/平面两态有。
+
+### 这轮踩到的环境坑（都不是代码问题，下次别再花时间排查）
+
+- **模拟器里残留的 `com.illusion.portalcantoss` 会自己起一个前台 Stage，把 SpacePlayer 的 Stage 挡死**：症状极具
+  误导性——`navigator.openStage()` **正常返回、不报错**，但 `ImmersiveScene` 的 composable 根本不组合（临时诊断
+  文件里连第一行 `immersive-composed` 都写不出来），画面上是一个紫色线框盒子（那是 PortalCanToss 的 Stage
+  边界，不是我们的）。判定方法：`adb logcat | grep -oE "Info\(Id=[0-9]+,pkg=[a-z.]+,visb=[a-z]+,focus=[a-z]+,type=[a-z_]+"`
+  ——如果看到别的包 `type=stage` 且 `visb=true`，我们的 Stage 就上不来（一个 space 里 Stage 是互斥的）。
+  处理：`am force-stop` + `pm disable-user --user 0 com.illusion.portalcantoss`（光 force-stop 会被系统拉回来）。
+  同一台机器上 `com.illusion.tossar`/`tech.illusion.boxdepthpoc`/`tech.illusion.stockquote` 一并 disable 了。
+- **`adb push` 到 `/sdcard/Movies/` 可能留下 `is_pending=1` 的 MediaStore 记录，对其它 App 完全不可见**：
+  本轮 push 时正好赶上设备离线，记录停在 `is_pending=1, duration=NULL, _size=NULL`，`content query` 看得到，
+  但 App 的 `MediaStore.Video` 查询查不到（表现为"文件明明在，资源库里就是没有这一项"）。修：
+  `adb shell content call --uri content://media --method scan_file --arg /storage/emulated/0/Movies/<name>.mp4`
+  （路径要用 `/storage/emulated/0/...`，用 `/sdcard/...` 返回 `STREAM=null` 不生效）。**另外警告**：
+  `content delete --uri content://media/external/video/media/<id>` 会**把真实文件一起删掉**，不是只删索引。
+- **底部栏里有些 SpatialUI 节点在 uiautomator dump 里 bounds 是 `[0,0][0,0]`**（这次是"开始播放"按钮、字幕状态
+  文字、立体格式 pill），不代表它们跑出屏幕——同一张截图里面板圆角完整、按钮清晰可见。要判断"是不是真的溢出"，
+  看面板自己的圆角边框是否完整（本文件前面记过这条），不要靠 bounds 是否为 0。
+- **`pico-cli emulator stop` 没有 `-y` 选项**（`start` 才有），要停指定实例用 `--adb-device emulator-5554`；
+  误用 `-y` 会让 stop 失败但 start 照样起一个新实例，结果同时出现 `emulator-5554`/`emulator-5556` 两台。
+
+### 对本文件既有记录的一处更正
+
+前面"视频资源库视觉重做"那节写着"这个项目锁定的 SDK 版本（0.13.3）里 `spatialHoverEffect` 只有底层
+`SpatialHoverEffectRootScope` block 版本，没有简单的 `enabled` 参数版本"——**这条是错的**。0.13.3 里
+`com/pico/spatial/ui/foundation/hover/SpatialHoverEffectStyle.kt` 就有
+`fun Modifier.spatialHoverEffect(style: SpatialHoverStyle = SpatialHoverStyle.Default, enabled: Boolean = true)`，
+block 版本在另一个文件（`SpatialHoverEffect.kt`）里，是两个重载。新增的 `FormatMenuButton` 已经按
+design-style 硬规则挂上了 `Modifier.spatialHoverEffect()`。**`VideoGridCard` 那个"唯一没做的 hover"因此是可以
+补上的**（一行 modifier），本轮范围内没动，留作下一步。
+
+### 续三的收尾：补齐 hover + 同步设计稿
+
+- **`VideoGridCard` / "其它·选择文件" 两个自定义可点击元素补上 `Modifier.spatialHoverEffect()`**（放在 `clip`/
+  `dashedBorder` 之后、`clickable` 之前，按 design-style 的 modifier 顺序规则，hover 才会跟着圆角形状）。
+  这就是上面那条更正的直接后果——`VideoGridCard` 从视觉重做那次开始一直被记为"唯一没做的 hover"，实际上
+  0.13.3 有简易重载，一行就能补。运行时证据：logcat 里出现
+  `func_name":"SpatialHoverEffect"` 的 SDK 埋点 + `BaseEffect$SpatialHoverStyle` 的原生字段链接
+  （说明 modifier 真的挂上生效了，不只是编译通过）；hover 的**视觉**是原生层跨进程渲染的，adb 造不出
+  "指针悬停"这个状态，所以外观仍需真机手柄确认。资源库整体渲染无回归（`./artifacts/hudfmt-31-hover-regression.png`）。
+- **设计稿 `docs/superpowers/specs/2026-08-05-spaceplayer-design.md` 同步改了三处**（都标了"2026-08-10 修订"）：
+  第 1 节"播放期间不切换投影"改写成"投影可在播放期间热切换、播放器不重建"并附实测结论；第 2 节手动覆盖入口
+  从"列表项弹层 + 仅 DEFAULT 时提示"改成"底部操作栏 + 沉浸 HUD 两处、始终显示"，并说明为什么不能按
+  `formatSource == DEFAULT` 隐藏（选完一次控件自己消失）；第 4 节 HUD 控件清单加上"格式修正"一项。
+
+## 2026-08-13：宽高比启发式格式检测（第三层识别信号）
+
+`FormatDetector` 原来只有两层识别（容器探测多视图 + 文件名关键词），完全没看视频本身的几何信息，
+不按命名规范来的素材只能落到默认兜底。新增第三层：从视频轨道宽高推测投影/立体格式，作为文件名检测
+之后的补缺信号。设计稿见 `docs/superpowers/specs/2026-08-13-aspect-ratio-format-detection-design.md`，
+实施计划见 `docs/superpowers/plans/2026-08-13-aspect-ratio-format-detection.md`。
+
+- **优先级规则**：文件名在投影/立体格式两个字段上都独立优先于宽高比——宽高比只填文件名没提到的那个
+  字段，从不覆盖文件名已经命中的字段。为此把 `FilenameFormatDetector.detect()` 的返回值从"一个全填好
+  默认值的 `DetectedFormat`（或 null）"改成两个独立可空字段的 `FilenameHint(projection, stereoMode)`，
+  否则 `FormatDetector` 分不清"文件名真的没提到"和"提到了但结果恰好是默认值"。
+- **复用同一次容器解析，不多开一次文件**：`MultiviewTrackProbe` 的接口从 `looksLikeMultiview(): Boolean`
+  改成 `probe(): ContainerProbeResult`，顺带带出遍历轨道时遇到的第一条视频轨宽高（不限编码，跟多视图
+  判断各自独立）。之前已经查出资源库刷新本身有主线程阻塞风险（`refreshLibrary()`/`refreshDownloads()`
+  对每个视频都做同步的 `MediaExtractor` 探测），所以新增的宽高比检测不能再让这个操作更重。
+- **新增 `AspectRatioFormatDetector`**：纯函数，四个分支按顺序判断（~2:1→360°，~1:1→180°，半宽像正常
+  单眼画面→SBS，半高像正常单眼画面→TB）。阈值区间下限**是 1.3 不是看起来更自然的 1.0**——设计阶段先定
+  的 1.0 会把常规 9:16 竖屏视频（1080×1920）误判成 TOP_AND_DOWN（1080/(1920/2)=1.125，恰好落进
+  1.0~2.4），竖屏视频很常见，误判代价不小，才把下限提到 1.3。这是纯算术设计里手算测试用例才发现的，
+  提醒以后碰到类似"两个数字互相除一下判断"的启发式规则，务必手算几个真实常见分辨率过一遍边界，不要只
+  验证"应该命中"的例子，也要验证"不该命中"的例子。
+- **已知未解决的边界情况**（记录下来，不是这一版要修的）：32:9 超宽显示器录屏（如 3840×1080）本身是
+  真实存在的平面视频分辨率，跟"横屏内容做成 SBS"的比例区间有重叠，仅凭宽高比分不清两者。这类内容较少
+  见于 VR 播放器的典型素材，检测错了可以通过资源库/HUD 里已有的手动修正入口纠正。
+- **验证方式**：这一层全是整数/浮点算术，JVM 单测（`AspectRatioFormatDetectorTest`/
+  `FilenameFormatDetectorTest`/`FormatDetectorTest`）完全覆盖，`assembleDebug`/`testDebugUnitTest` 均
+  BUILD SUCCESSFUL，没有涉及 UI/ECS/Spatial SDK，不需要模拟器或真机验证。
