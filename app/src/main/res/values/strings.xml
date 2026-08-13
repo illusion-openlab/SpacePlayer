@@ -12,6 +12,7 @@
 
     <string name="format_source_container">Container detection</string>
     <string name="format_source_filename">Filename detection</string>
+    <string name="format_source_aspect_ratio">Aspect-ratio detection</string>
     <string name="format_source_manual">Manual override</string>
     <string name="format_source_default">Default fallback</string>
 

@@ -5,7 +5,7 @@ import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.Projection
 import tech.illusion.spaceplayer.playback.StereoMode
 
-enum class FormatSource { DETECTED_CONTAINER, DETECTED_FILENAME, MANUAL_OVERRIDE, DEFAULT }
+enum class FormatSource { DETECTED_CONTAINER, DETECTED_FILENAME, DETECTED_ASPECT_RATIO, MANUAL_OVERRIDE, DEFAULT }
 
 data class VideoItem(
     val uri: Uri,

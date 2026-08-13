@@ -10,6 +10,7 @@
 
     <string name="format_source_container">容器探测</string>
     <string name="format_source_filename">文件名识别</string>
+    <string name="format_source_aspect_ratio">宽高比推测</string>
     <string name="format_source_manual">手动指定</string>
     <string name="format_source_default">默认兜底</string>
 

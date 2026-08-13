@@ -33,7 +33,50 @@
 - Consumes: `Projection` (`app/src/main/java/tech/illusion/spaceplayer/playback/Projection.kt`, values `FLAT`/`HEMISPHERE_180`/`SPHERE_360`), `StereoMode` (`app/src/main/java/tech/illusion/spaceplayer/playback/StereoMode.kt`, values `MONO`/`SIDE_BY_SIDE`/`TOP_AND_DOWN`/`MULTIVIEW_MVHEVC`), `DetectedFormat` and `FormatSource` (both in `app/src/main/java/tech/illusion/spaceplayer/library/VideoItem.kt`).
 - Produces: `AspectRatioFormatDetector.detect(width: Int, height: Int): DetectedFormat?` — a top-level `object` with this single public function. Task 2 calls this directly. When it returns non-null, the field NOT relevant to the matched band is set to the neutral default (`Projection.FLAT` for the two stereo bands, `StereoMode.MONO` for the two projection bands) so callers can safely read either field off the result without checking which band fired.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Add the `FormatSource.DETECTED_ASPECT_RATIO` enum value, its string resources, and the `Labels.kt` branch**
+
+This has to happen before the test/implementation below, not in Task 2 as originally planned — both the test and the implementation reference `FormatSource.DETECTED_ASPECT_RATIO`, and `Labels.kt`'s `FormatSource.label()` is an exhaustive `when` expression, so adding the enum value without also adding its branch there breaks the build immediately. (Found this the hard way mid-execution: the plan's original Task 2 Step 5 placement doesn't compile from Task 1 onward.)
+
+In `app/src/main/java/tech/illusion/spaceplayer/library/VideoItem.kt:8`, change:
+
+```kotlin
+enum class FormatSource { DETECTED_CONTAINER, DETECTED_FILENAME, MANUAL_OVERRIDE, DEFAULT }
+```
+
+to:
+
+```kotlin
+enum class FormatSource { DETECTED_CONTAINER, DETECTED_FILENAME, DETECTED_ASPECT_RATIO, MANUAL_OVERRIDE, DEFAULT }
+```
+
+In `app/src/main/res/values/strings.xml`, add a line after the `format_source_filename` entry (around line 14):
+
+```xml
+    <string name="format_source_aspect_ratio">Aspect-ratio detection</string>
+```
+
+In `app/src/main/res/values-zh/strings.xml`, add the matching line after the `format_source_filename` entry (around line 12):
+
+```xml
+    <string name="format_source_aspect_ratio">宽高比推测</string>
+```
+
+In `app/src/main/java/tech/illusion/spaceplayer/ui/Labels.kt`, change the `FormatSource.label()` function to:
+
+```kotlin
+@Composable
+fun FormatSource.label(): String = stringResource(
+    when (this) {
+        FormatSource.DETECTED_CONTAINER -> R.string.format_source_container
+        FormatSource.DETECTED_FILENAME -> R.string.format_source_filename
+        FormatSource.DETECTED_ASPECT_RATIO -> R.string.format_source_aspect_ratio
+        FormatSource.MANUAL_OVERRIDE -> R.string.format_source_manual
+        FormatSource.DEFAULT -> R.string.format_source_default
+    },
+)
+```
+
+- [ ] **Step 2: Write the failing tests**
 
 Create `app/src/test/java/tech/illusion/spaceplayer/library/AspectRatioFormatDetectorTest.kt`:
 
@@ -110,12 +153,12 @@ class AspectRatioFormatDetectorTest {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 3: Run tests to verify they fail**
 
 Run: `./gradlew testDebugUnitTest --tests "tech.illusion.spaceplayer.library.AspectRatioFormatDetectorTest"`
 Expected: FAIL — `AspectRatioFormatDetector` is unresolved (class does not exist yet).
 
-- [ ] **Step 3: Write the implementation**
+- [ ] **Step 4: Write the implementation**
 
 Create `app/src/main/java/tech/illusion/spaceplayer/library/AspectRatioFormatDetector.kt`:
 
@@ -160,16 +203,20 @@ object AspectRatioFormatDetector {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 5: Run tests to verify they pass**
 
 Run: `./gradlew testDebugUnitTest --tests "tech.illusion.spaceplayer.library.AspectRatioFormatDetectorTest"`
 Expected: PASS, 9 tests green.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/library/AspectRatioFormatDetector.kt \
-        app/src/test/java/tech/illusion/spaceplayer/library/AspectRatioFormatDetectorTest.kt
+        app/src/test/java/tech/illusion/spaceplayer/library/AspectRatioFormatDetectorTest.kt \
+        app/src/main/java/tech/illusion/spaceplayer/library/VideoItem.kt \
+        app/src/main/java/tech/illusion/spaceplayer/ui/Labels.kt \
+        app/src/main/res/values/strings.xml \
+        app/src/main/res/values-zh/strings.xml
 git commit -m "Add AspectRatioFormatDetector for width/height-based format hints"
 ```
 
@@ -184,16 +231,12 @@ git commit -m "Add AspectRatioFormatDetector for width/height-based format hints
 - Modify: `app/src/test/java/tech/illusion/spaceplayer/library/FilenameFormatDetectorTest.kt`
 - Modify: `app/src/main/java/tech/illusion/spaceplayer/library/FormatDetector.kt`
 - Modify: `app/src/test/java/tech/illusion/spaceplayer/library/FormatDetectorTest.kt`
-- Modify: `app/src/main/java/tech/illusion/spaceplayer/library/VideoItem.kt:8`
-- Modify: `app/src/main/java/tech/illusion/spaceplayer/ui/Labels.kt:56-63`
-- Modify: `app/src/main/res/values/strings.xml:13-16`
-- Modify: `app/src/main/res/values-zh/strings.xml:11-14`
 
 **Interfaces:**
-- Consumes: `AspectRatioFormatDetector.detect(width, height): DetectedFormat?` (Task 1).
+- Consumes: `AspectRatioFormatDetector.detect(width, height): DetectedFormat?` and `FormatSource.DETECTED_ASPECT_RATIO` (both Task 1).
 - Produces: `data class ContainerProbeResult(val isMultiview: Boolean, val videoWidth: Int?, val videoHeight: Int?)`, `MultiviewTrackProbe.probe(context, uri): ContainerProbeResult` (replaces the old `looksLikeMultiview(context, uri): Boolean`), `FakeMultiviewTrackProbe(isMultiview: Boolean, videoWidth: Int? = null, videoHeight: Int? = null)`, `data class FilenameHint(val projection: Projection?, val stereoMode: StereoMode?)`, `FilenameFormatDetector.detect(displayName: String): FilenameHint` (no longer nullable itself). `FormatDetector.detect(context, uri, displayName): DetectedFormat` keeps its existing public signature — `LibraryViewModel.toVideoItem()` (`app/src/main/java/tech/illusion/spaceplayer/ui/library/LibraryViewModel.kt:71`) calls this and needs **no changes**.
 
-This task has four write/implement pairs that land together because of the compile coupling described above — do them in this order, but only run the build/tests at the very end (Step 9); the intermediate "implement" steps will leave the module non-compiling by design until Step 8 is done, same as any multi-file rename.
+This task has three write/implement pairs that land together because of the compile coupling described above — do them in this order, but only run the build/tests at the very end (Step 8); the intermediate "implement" steps will leave the module non-compiling by design until Step 7 is done, same as any multi-file rename.
 
 - [ ] **Step 1: Rewrite `MultiviewTrackProbe.kt`**
 
@@ -434,48 +477,7 @@ object FilenameFormatDetector {
 }
 ```
 
-- [ ] **Step 5: Add the new `FormatSource` value, string resources, and `Labels.kt` branch**
-
-In `app/src/main/java/tech/illusion/spaceplayer/library/VideoItem.kt:8`, change:
-
-```kotlin
-enum class FormatSource { DETECTED_CONTAINER, DETECTED_FILENAME, MANUAL_OVERRIDE, DEFAULT }
-```
-
-to:
-
-```kotlin
-enum class FormatSource { DETECTED_CONTAINER, DETECTED_FILENAME, DETECTED_ASPECT_RATIO, MANUAL_OVERRIDE, DEFAULT }
-```
-
-In `app/src/main/res/values/strings.xml`, add a line after the `format_source_filename` entry (around line 14):
-
-```xml
-    <string name="format_source_aspect_ratio">Aspect-ratio detection</string>
-```
-
-In `app/src/main/res/values-zh/strings.xml`, add the matching line after the `format_source_filename` entry (around line 12):
-
-```xml
-    <string name="format_source_aspect_ratio">宽高比推测</string>
-```
-
-In `app/src/main/java/tech/illusion/spaceplayer/ui/Labels.kt`, change the `FormatSource.label()` function (lines 56-63) to:
-
-```kotlin
-@Composable
-fun FormatSource.label(): String = stringResource(
-    when (this) {
-        FormatSource.DETECTED_CONTAINER -> R.string.format_source_container
-        FormatSource.DETECTED_FILENAME -> R.string.format_source_filename
-        FormatSource.DETECTED_ASPECT_RATIO -> R.string.format_source_aspect_ratio
-        FormatSource.MANUAL_OVERRIDE -> R.string.format_source_manual
-        FormatSource.DEFAULT -> R.string.format_source_default
-    },
-)
-```
-
-- [ ] **Step 6: Rewrite `FormatDetectorTest.kt`**
+- [ ] **Step 5: Rewrite `FormatDetectorTest.kt`**
 
 Replace the full contents of `app/src/test/java/tech/illusion/spaceplayer/library/FormatDetectorTest.kt`:
 
@@ -589,7 +591,7 @@ class FormatDetectorTest {
 }
 ```
 
-- [ ] **Step 7: Rewrite `FormatDetector.kt`**
+- [ ] **Step 6: Rewrite `FormatDetector.kt`**
 
 Replace the full contents of `app/src/main/java/tech/illusion/spaceplayer/library/FormatDetector.kt`:
 
@@ -642,7 +644,7 @@ class FormatDetector(private val multiviewTrackProbe: MultiviewTrackProbe) {
 }
 ```
 
-- [ ] **Step 8: Run the full test suite to verify everything passes together**
+- [ ] **Step 7: Run the full test suite to verify everything passes together**
 
 Run: `JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.18/libexec/openjdk.jdk/Contents/Home ./gradlew testDebugUnitTest`
 
@@ -650,7 +652,7 @@ Run: `JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.18/libexec/openjdk.jdk/Cont
 
 Expected: `BUILD SUCCESSFUL`. This is the first point at which the module compiles again since Step 1 — `FilenameFormatDetectorTest` (13 tests) and `FormatDetectorTest` (9 tests) both go green here, along with every pre-existing test elsewhere in the module. If anything fails, re-check the four files this task rewrote against the exact code blocks above before touching anything else — a mismatch between one file's new type and another's usage of it is the most likely cause.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add app/src/main/java/tech/illusion/spaceplayer/library/MultiviewTrackProbe.kt \
@@ -658,11 +660,7 @@ git add app/src/main/java/tech/illusion/spaceplayer/library/MultiviewTrackProbe.
         app/src/main/java/tech/illusion/spaceplayer/library/FilenameFormatDetector.kt \
         app/src/test/java/tech/illusion/spaceplayer/library/FilenameFormatDetectorTest.kt \
         app/src/main/java/tech/illusion/spaceplayer/library/FormatDetector.kt \
-        app/src/test/java/tech/illusion/spaceplayer/library/FormatDetectorTest.kt \
-        app/src/main/java/tech/illusion/spaceplayer/library/VideoItem.kt \
-        app/src/main/java/tech/illusion/spaceplayer/ui/Labels.kt \
-        app/src/main/res/values/strings.xml \
-        app/src/main/res/values-zh/strings.xml
+        app/src/test/java/tech/illusion/spaceplayer/library/FormatDetectorTest.kt
 git commit -m "FormatDetector orchestrates filename, container, and aspect-ratio detection"
 ```
 
