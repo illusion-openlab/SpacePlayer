@@ -265,7 +265,11 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                             }
                         },
                     ) {
-                        LibraryCategory.entries.filter { it != LibraryCategory.IMPORT }.forEach { category ->
+                        // HISTORY is intentionally excluded from the sidebar per user request, but the
+                        // enum value itself is kept (LibraryViewModel.visibleItems()/iconRes()'s
+                        // exhaustive `when` branches still need it to compile) - restoring the entry
+                        // point later is a one-line revert of this filter.
+                        LibraryCategory.entries.filter { it != LibraryCategory.IMPORT && it != LibraryCategory.HISTORY }.forEach { category ->
                             val categoryInteractionSource = remember(category) { MutableInteractionSource() }
                             SideNavigationItem(
                                 selected = libraryViewModel.selectedCategory == category,
