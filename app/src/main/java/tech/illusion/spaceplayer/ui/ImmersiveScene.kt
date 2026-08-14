@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import com.pico.spatial.core.ecs.TransformComponent
+import com.pico.spatial.core.math.EulerAngles
 import com.pico.spatial.core.math.Vector3
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.foundation.content.SpatialView
@@ -154,6 +155,13 @@ fun ImmersiveScene() {
                 attachments.entity(HUD_ATTACHMENT_ID)?.apply {
                     components[TransformComponent::class.java]?.apply {
                         setPosition(Vector3(0f, 0.9f, -1.5f))
+                        // Tilted back so the panel faces more toward the user's downward gaze -
+                        // EulerAngles fields are DEGREES, not radians (confirmed by decompiling
+                        // foundation-0.13.3-sources.jar's EulerAngles.toQuat(), which does its own
+                        // `* (PI / 180.0)` conversion internally). Sign direction is unverified - the
+                        // SDK docs don't state which way positive pitch tilts, and no other entity in
+                        // this project sets pitch. If this reads backwards on device, flip to -22f.
+                        setEulerAngles(EulerAngles(pitch = 22f, yaw = 0f, roll = 0f))
                     }
                     content.addEntity(this)
                 }
