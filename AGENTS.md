@@ -1445,43 +1445,85 @@ scratch 工作区，最终会在收尾时删除，git 历史才是权威记录�
 3. 新增极小的 Koin 单例 `LibrarySessionState`（只有一个字段 `selectedCategory`），让侧边栏选中分类跨"进入
    沉浸播放→主窗口容器销毁重建→退出"这条边界存活——根因是 `LibraryViewModel` 是纯 `remember`，容器重建
    就重置；只搬这一个字段，其它状态（`selectedItem`/格式筛选等）有意不搬，保持改动面最小。
-4. 沉浸 HUD 面板加 `setEulerAngles(EulerAngles(pitch = 22f, yaw = 0f, roll = 0f))` 向后仰。**关键事实**：
+4. 沉浸 HUD 面板加 `setEulerAngles(EulerAngles(pitch = -22f, yaw = 0f, roll = 0f))` 向后仰。**关键事实**：
    反编译 `foundation-0.13.3-sources.jar` 确认 `EulerAngles` 三个字段单位是**度数**不是弧度（写计划时发现
-   设计稿草稿阶段的假设是错的，已改正）。`pitch` 符号方向没有 SDK 文档依据，代码里留了运行时验证的注释和
-   `-22f` 的 fallback。
+   设计稿草稿阶段的假设是错的，已改正）。`pitch` 符号方向**最初误判为"SDK 无文档、只能装机试"**，最终
+   全量分支 review 时靠反编译 `Matrix4.kt`（绕 X 轴旋转遵循右手定则）+ `EulerAngles.toQuat()`（用标准
+   `sin(θ/2)/cos(θ/2)` 构造，即右手定则的旋转）+ 项目里已有的 `-Z 朝前` 先例
+   （`ecs/SubtitleFollowComponent.kt:24` 的 `relativePosition = Vector3(0f, -0.3f, -1.0f)`）三者一起，
+   在没有真机的情况下推导出符号：面板无父实体、静止时正面朝 +Z 才能被站在 -Z 方向的用户看到，绕 +X 正向
+   旋转会把这个 +Z 法线转向 -Y（朝下/背离用户）——`pitch = +22f` 是反的，`pitch = -22f` 才是"顶部朝上朝
+   用户倾斜"的正确方向。**教训**：不是所有"文档没写清楚的方向性问题"都必须留到真机才能定——这次差点把一个
+   靠反编译源码 + 项目内既有代码先例就能推出来的确定性问题，错误归类成了"环境依赖、只能装机确认"。
 5. HUD 首次显示后、首帧渲染完成起算 5 秒自动隐藏一次（不是从点击播放起算，避免被 loading 遮罩吃掉倒计时）；
    `.enabled` 从 `SpatialView.update`（不是每帧循环）搬到已有的每帧 `withFrameNanos` 循环，确保这个属性
-   只有一个写入点。
+   只有一个写入点。**全量分支 review 抓到的真实 bug（已修复）**：这一条单独看没问题，但和第 7 条（捏合切
+   HUD 显隐，且是全代码库里唯一能重新显示 HUD 的入口）叠在一起，会在手部追踪完全不可用的场景（模拟器没有
+   手部追踪；真机权限没给、设备不支持等）制造一个"5 秒后 HUD 自动消失、且永远没有办法再叫出来"的死路——
+   HUD 上有"返回主窗口"这个沉浸播放唯一的退出入口。修复：加一个 `hasEverTrackedHand` 状态，只有真的观测到
+   过至少一帧手部数据，5 秒计时器才会真的隐藏 HUD；从未追踪到手，就一直保持可见（回退到这个功能加入之前的
+   安全行为）。**这类"每个任务单独看都对，组合起来才出问题"的缺陷是任务拆分执行模式的已知盲区**，全量分支
+   review（不是任务级 review）才照见了它。
 6. 右手拇指尖/食指尖各绑一个 8mm 纯色小球（`MeshResource.createSphere` + `UnlitMaterial`），跟踪不到时隐藏
    而不是停在世界原点。`HandTrackingProvider` 生命周期完全照抄项目里已验证过的 `HMDTrackingProvider` 模式
    ——每个播放会话新建实例、`start()` 走 `backgroundScope.launch`（阻塞原生调用，8/14 当天的真机 ANR
    就是直接在主线程调用同一条代码路径触发的，这次没有重蹈）、`exitImmersive()`/`onCleared()` 都停止置空。
+   补了 `handProvider.start()` 的 `StartResult` + `supportState` 日志（`PlaybackViewModel` 新增
+   `TAG`/`Log` import）——`WITHOUT_PERMISSION` 是运行时状态不是一次性检查，装机验证时如果小球不出现，
+   这条日志能直接分辨是权限/设备不支持/单纯手不在视野里，不用连着猜好几轮。每帧读取手部数据那段代码包了
+   `runCatching`——`HandPose.joint()` SDK 内部用的是 `.first { }` 不是 `.firstOrNull()`，关节列表不全时
+   会抛异常，而这段代码跑在全 App 唯一的每帧驱动循环里，一旦抛出去会连累播放进度/字幕跟随/HUD 显隐一起
+   罢工，捕获后统一降级成"隐藏小球、重置捏合状态"。
 7. 捏合手势切换 HUD 显隐：新增 `PinchDetector`（纯函数，25mm 内判定捏合、40mm 外判定松开，中间维持上一帧
-   状态，只在"非捏合→捏合"的上升沿触发一次），单元测试 10/10 通过（含两个阈值边界的严格大小判断）。
+   状态，只在"非捏合→捏合"的上升沿触发一次），单元测试 11/11 通过（含两个阈值边界的严格大小判断、以及一条
+   贯穿"进入→在滞回区间内停留几帧→松开→再次落入滞回区间"完整序列的多帧测试——这条是全量分支 review 加的,
+   之前 10 条单测都是"调用一次 `update()`"的单帧测试，没有一条真正验证过滞回区间存在的意义——防抖动。
+
+**流程记录**：9 个任务全部 subagent 实现 + 独立 subagent 审查通过后，还跑了一次**全量分支 review**（单个
+任务视角看不到、只有把 9 次 commit 叠在一起才会显形的问题）——见上面第 4/5/6/7 条里标"全量分支 review 抓到"
+的部分，其中第 5 条（HUD 自动隐藏在手部追踪不可用时会把用户困在沉浸播放里出不来）是这轮全部改动里最严重的
+一个真实 bug，任务级 review 完全没发现，因为 Task 5（自动隐藏）和 Task 8（捏合是唯一的重新显示入口）分开看
+都各自成立，只有合在一起看才会出现"5 秒后彻底没有退出路径"这个组合效应。**这是任务拆分执行模式的结构性
+盲区，不是这次审查疏忽**——以后类似"多个任务分别给同一个 UI 元素的显隐/生命周期添加约束"的场景，全量分支
+review 这一步不能省。全量 review 的 3 个 Important + 3 个 Minor 发现已经全部修复并经过 scoped re-review
+确认（fix commit 见 git 历史，逐条 verdict 记录在
+`.superpowers/sdd/2026-08-14-library-ux-and-hand-interaction/progress.md`，这个目录本身是 scratch 工作区，
+收尾后会删除，git 历史才是权威记录）。
 
 **验证状态（如实分层记录，不笼统写"已确认"）**：
 
-- **可自证、已验证**：`./gradlew clean assembleDebug testDebugUnitTest` BUILD SUCCESSFUL，72/72 单测通过
-  （0 failure 0 error）。9 个任务的 code review 全部 approved，2 处安全关键点（`HandTrackingProvider.start()`
-  确实包在 `backgroundScope.launch` 里、`exitImmersive()`/`onCleared()` 都正确 stop+置空）逐行核对过 diff
-  文本，不是听 implementer 自报。装到模拟器和真机（`PB3B4XJGL2090011G`）两边，进程存活，`logcat`/crash
+- **可自证、已验证**：`./gradlew clean assembleDebug testDebugUnitTest` BUILD SUCCESSFUL，73/73 单测通过
+  （0 failure 0 error）。9 个任务的 code review 全部 approved，全量分支 review 的 6 个发现全部修复并经
+  scoped re-review 确认 ADDRESSED、无新增缺陷。2 处安全关键点（`HandTrackingProvider.start()` 确实包在
+  `backgroundScope.launch` 里、`exitImmersive()`/`onCleared()` 都正确 stop+置空）逐行核对过 diff 文本，
+  不是听 implementer 自报；`pitch` 符号方向已经靠反编译源码 + 项目内既有代码先例推导确认（见上文第 4 条），
+  不再是"未知，等装机"。装到模拟器和真机（`PB3B4XJGL2090011G`）两边，进程存活，`logcat`/crash
   buffer/`dumpsys dropbox --print` 全干净，没有引入新的 FATAL/ANR。侧边栏高度+隐藏历史两项通过模拟器截图
   确认（`artifacts/task1-2-verify.png`）。
 - **没有验证到、需要用户戴设备确认的部分**（如实列出，这次没有一项是"应该没问题就跳过"）：
-  1. HUD 倾斜方向（`pitch = 22f` 是否是想要的"后仰"方向，不是"前俯"）。
+  1. HUD 倾斜方向装机后视觉上是否真的是想要的"后仰"效果（符号已经靠推导定了 `-22f`，这一项是"好不好看"的
+     主观确认，不是"方向对不对"的正确性问题——正确性已经有代码层面的依据）。
   2. 5 秒自动隐藏的真实挂钟时间是否符合预期（自动化验证被设备端 `screencap`/焦点抢占问题挡住，退而用了
      代码层论证：`hasFirstFrameRendered` 一个会话内只会 false→true 一次，`delay(5000)` 从这个时刻起算，
-     这个论证经 reviewer 独立核对过是成立的，但真实挂钟时间没有实测过）。
+     这个论证经 reviewer 独立核对过是成立的，但真实挂钟时间没有实测过）。**同时要确认**：`hasEverTrackedHand`
+     兜底是否生效——如果这次设备/这次会话手部追踪就是不可用，HUD 应该保持常显，不应该在 5 秒后消失。
   3. 侧边栏选中分类跨沉浸播放往返是否真的保持（`adb tap` 打不进沉浸态的 spatial 容器，这条链路的代码
      被逐行核对过是对的，但端到端没有真机走过一遍）。
-  4. 右手拇指/食指小球是否真的跟手、位置对不对。
+  4. 右手拇指/食指小球是否真的跟手、位置对不对。**新增一个具体要观察的点**（全量 review 提出，之前没人
+     想到要单独确认）：手离开视野时，小球是"消失"还是"停在最后位置不动"？代码里 `handPose == null` 分支
+     会隐藏两个球，但前提是原生层真的会在追踪丢失时把 `right` 置空——如果原生层只是"不再回调"、`latestData`
+     一直返回上一个非空值，App 代码是分辨不出来的（`HandTrackingData.timestamp` 是 `internal`，App 侧拿
+     不到时间戳做过期判断）。这是两个不同的问题，"跟不跟手"确认了不代表"追踪丢失时的兜底行为"也确认了。
   5. 捏合手势能否稳定触发 HUD 显隐、滞回区间（25-40mm）是否真的消除了抖动。
   6. `HandTrackingProvider().start()` 真正触发的那一刻（进入沉浸播放、开始播放视频）有没有 ANR——这是
-     全部改动里唯一一个"和已知真实事故同一条代码路径"的风险点，代码层面的两处安全关键写法都核对过，但
-     没能在这次会话里让它真正跑一次（需要戴设备点开一个视频才会触发）。
+     全部改动里唯一一个"和已知真实事故同一条代码路径"的风险点，代码层面的两处安全关键写法都核对过，
+     而且现在这一步会往 logcat 打一行 `HandTrackingProvider start result=... supportState=...`（第 6 条
+     改动新增），如果小球没出现，直接看这行日志能分清是权限/设备不支持/单纯手不在视野里，不用来回猜。
 
   以上 6 项没有一项是能靠 `adb`/模拟器自动化跑通的——全部需要用户实际戴上设备、用真手在真实沉浸播放里试。
   下一步：戴上设备，连续播放几个视频，进沉浸后等 HUD 自动隐藏、试着捏合几次看是否稳定切换、留意小球是否
-  跟手，任何一项不对都可以直接反馈，代码层面的证据（diff 逐行核对记录）已经存在
+  跟手（以及追踪丢失时是隐藏还是冻结）、如果小球没出现就先看那行新加的 `HandTrackingProvider start` 日志，
+  任何一项不对都可以直接反馈，代码层面的证据（diff 逐行核对记录、全量 review 报告、fix wave 的 scoped
+  re-review 记录）已经存在
   `.superpowers/sdd/2026-08-14-library-ux-and-hand-interaction/progress.md`，方便回溯是哪个任务、哪次
   review 的判断。
