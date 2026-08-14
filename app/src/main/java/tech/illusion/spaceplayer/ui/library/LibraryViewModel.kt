@@ -16,14 +16,25 @@ import tech.illusion.spaceplayer.library.storage.SharedPreferencesKeyValueStore
 import tech.illusion.spaceplayer.playback.Projection
 import tech.illusion.spaceplayer.subtitle.SubtitleDiscovery
 
-/** 只在主窗口内用，不需要跨容器共享，所以不入 Koin，直接在 [MainLibraryScreen] 里 `remember`。 */
-class LibraryViewModel(private val context: Context) {
+/**
+ * Most of this state (libraryItems/selectedItem/format filter) only lives inside the main window
+ * and doesn't need to survive it being torn down, so it stays a plain `remember` in
+ * [MainLibraryScreen] rather than going into Koin. `selectedCategory` is the one exception - its
+ * initial value and every write go through [sessionState], because it's the one field that must
+ * survive the main WindowContainer being closed and reopened around each immersive playback
+ * session. See docs/superpowers/specs/2026-08-14-library-ux-and-hand-interaction-design.md section
+ * 3 for why only this one field moved and not the rest of this class.
+ */
+class LibraryViewModel(
+    private val context: Context,
+    private val sessionState: LibrarySessionState,
+) {
     private val repository = VideoLibraryRepository(context)
     private val formatDetector = FormatDetector(MediaExtractorMultiviewProbe())
     val preferencesStore =
         VideoPreferencesStore(SharedPreferencesKeyValueStore(context, "video_preferences"))
 
-    var selectedCategory by mutableStateOf(LibraryCategory.LIBRARY)
+    var selectedCategory by mutableStateOf(sessionState.selectedCategory)
         private set
     var formatFilter by mutableStateOf<Projection?>(null)
         private set
@@ -36,6 +47,7 @@ class LibraryViewModel(private val context: Context) {
 
     fun selectCategory(category: LibraryCategory) {
         selectedCategory = category
+        sessionState.selectedCategory = category
         selectedItem = null
     }
 

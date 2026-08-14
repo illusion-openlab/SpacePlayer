@@ -113,7 +113,8 @@ private fun LibraryCategory.iconRes(): Int = when (this) {
 @Composable
 fun MainLibraryScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val libraryViewModel = remember { LibraryViewModel(context) }
+    val librarySessionState: LibrarySessionState = GlobalContext.get().get()
+    val libraryViewModel = remember { LibraryViewModel(context, librarySessionState) }
 
     val navigator = LocalSpatialNavigator.current
     val coroutineScope = rememberCoroutineScope()
