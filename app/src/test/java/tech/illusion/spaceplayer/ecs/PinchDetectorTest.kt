@@ -79,4 +79,34 @@ class PinchDetectorTest {
     fun `thresholds are ordered engage below release`() {
         assertTrue(PinchDetector.ENGAGE_DISTANCE_METERS < PinchDetector.RELEASE_DISTANCE_METERS)
     }
+
+    @Test
+    fun `a realistic frame sequence stays pinched through the hysteresis band and does not re-engage after release`() {
+        // Engage.
+        val engage = PinchDetector.update(distanceMeters = 0.010f, wasPinching = false)
+        assertTrue(engage.isPinching)
+        assertTrue(engage.justEngaged)
+
+        // Hover in the hysteresis band across a few frames - must stay pinched, no re-trigger.
+        val hover1 = PinchDetector.update(distanceMeters = 0.030f, wasPinching = engage.isPinching)
+        assertTrue(hover1.isPinching)
+        assertFalse(hover1.justEngaged)
+
+        val hover2 = PinchDetector.update(distanceMeters = 0.038f, wasPinching = hover1.isPinching)
+        assertTrue(hover2.isPinching)
+        assertFalse(hover2.justEngaged)
+
+        val hover3 = PinchDetector.update(distanceMeters = 0.032f, wasPinching = hover2.isPinching)
+        assertTrue(hover3.isPinching)
+        assertFalse(hover3.justEngaged)
+
+        // Release.
+        val release = PinchDetector.update(distanceMeters = 0.060f, wasPinching = hover3.isPinching)
+        assertFalse(release.isPinching)
+
+        // Return to the band after release - must NOT re-engage inside the band.
+        val afterRelease = PinchDetector.update(distanceMeters = 0.030f, wasPinching = release.isPinching)
+        assertFalse(afterRelease.isPinching)
+        assertFalse(afterRelease.justEngaged)
+    }
 }

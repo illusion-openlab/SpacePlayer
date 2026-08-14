@@ -42,6 +42,10 @@ fun ImmersiveScene() {
     // Plain Compose state, not an ECS Component - same reasoning as subtitleFollow above: the
     // native ECS layer silently rejects custom Component subtypes.
     var wasPinching by remember { mutableStateOf(false) }
+    // Same reasoning as wasPinching above (plain Compose state, not an ECS Component). Tracks
+    // whether hand tracking has ever produced a real frame this session - see the 5s auto-hide
+    // LaunchedEffect below for why this gates the only escape hatch out of immersive playback.
+    var hasEverTrackedHand by remember { mutableStateOf(false) }
 
     fun returnToMainWindow() {
         viewModel.exitImmersive()
@@ -87,7 +91,18 @@ fun ImmersiveScene() {
     LaunchedEffect(viewModel.manager.hasFirstFrameRendered) {
         if (viewModel.manager.hasFirstFrameRendered) {
             delay(5000)
-            viewModel.hideHud()
+            // Only auto-hide once hand tracking has actually proven itself functional at least once
+            // this session (hasEverTrackedHand, set from the per-frame hand-tracking block below).
+            // The HUD is the ONLY way back to the main window ("返回主窗口") plus every playback
+            // control, and toggleHudVisibility() has exactly one caller: the pinch rising edge. If
+            // hand tracking never produces a frame - no controller support on the emulator, a
+            // permission not yet granted this session, or a device that simply lacks hand tracking -
+            // auto-hiding anyway would strand the user with no visible controls and no way back short
+            // of the video ending or an OS-level home press. Deliberately doing nothing here (HUD
+            // stays visible) is the same safe behavior the app had before this feature existed.
+            if (hasEverTrackedHand) {
+                viewModel.hideHud()
+            }
         }
     }
 
@@ -111,29 +126,48 @@ fun ImmersiveScene() {
                 // null-check below because it only touches viewModel.thumbTipEntity/indexTipEntity
                 // (added directly to `content`, not attachment panels) and viewModel state - none of
                 // it needs `attachments` to be non-null.
-                val handPose = viewModel.handTrackingProvider?.latestData?.right
-                if (handPose != null) {
-                    val thumbTip = handPose.joint(HandJoint.Index.THUMB_TIP)
-                    val indexTip = handPose.joint(HandJoint.Index.INDEX_TIP)
-                    viewModel.thumbTipEntity.components[TransformComponent::class.java]
-                        ?.setPosition(thumbTip.position)
-                    viewModel.indexTipEntity.components[TransformComponent::class.java]
-                        ?.setPosition(indexTip.position)
-                    viewModel.thumbTipEntity.enabled = true
-                    viewModel.indexTipEntity.enabled = true
+                //
+                // Wrapped in runCatching: HandPose.joint(index) is implemented in the SDK as
+                // `handJoints.first { it.index == index }` (first, not firstOrNull), so a
+                // malformed/partial joint list throws NoSuchElementException. This block runs inside
+                // the app's only per-frame driver (this same withFrameNanos loop), which also drives
+                // playback position, subtitle lookup, subtitle follow, and the HUD's `.enabled` write -
+                // an uncaught exception here would kill all of those together, not just hand tracking.
+                // On failure, fail safe: hide the markers and clear any latched pinch state, same as
+                // the tracking-unavailable `else` branch below.
+                runCatching {
+                    val handPose = viewModel.handTrackingProvider?.latestData?.right
+                    if (handPose != null) {
+                        val thumbTip = handPose.joint(HandJoint.Index.THUMB_TIP)
+                        val indexTip = handPose.joint(HandJoint.Index.INDEX_TIP)
+                        viewModel.thumbTipEntity.components[TransformComponent::class.java]
+                            ?.setPosition(thumbTip.position)
+                        viewModel.indexTipEntity.components[TransformComponent::class.java]
+                            ?.setPosition(indexTip.position)
+                        viewModel.thumbTipEntity.enabled = true
+                        viewModel.indexTipEntity.enabled = true
+                        // Hand tracking has proven itself functional at least once this session - see
+                        // the 5s auto-hide LaunchedEffect above, which refuses to hide the HUD (the
+                        // only way back to the main window) until this has happened at least once.
+                        hasEverTrackedHand = true
 
-                    val distance = Vector3.distance(thumbTip.position, indexTip.position)
-                    val pinch = PinchDetector.update(distance, wasPinching)
-                    wasPinching = pinch.isPinching
-                    if (pinch.justEngaged) {
-                        viewModel.toggleHudVisibility()
+                        val distance = Vector3.distance(thumbTip.position, indexTip.position)
+                        val pinch = PinchDetector.update(distance, wasPinching)
+                        wasPinching = pinch.isPinching
+                        if (pinch.justEngaged) {
+                            viewModel.toggleHudVisibility()
+                        }
+                    } else {
+                        // Right hand not currently tracked (out of frame, tracking lost, or
+                        // HandTrackingProvider.start() hasn't completed on the background thread yet) -
+                        // hide the markers rather than leaving them at a stale position, and reset
+                        // wasPinching so a stale pinch state can't produce a spurious rising edge the
+                        // instant tracking resumes.
+                        viewModel.thumbTipEntity.enabled = false
+                        viewModel.indexTipEntity.enabled = false
+                        wasPinching = false
                     }
-                } else {
-                    // Right hand not currently tracked (out of frame, tracking lost, or
-                    // HandTrackingProvider.start() hasn't completed on the background thread yet) -
-                    // hide the markers rather than leaving them at a stale position, and reset
-                    // wasPinching so a stale pinch state can't produce a spurious rising edge the
-                    // instant tracking resumes.
+                }.onFailure {
                     viewModel.thumbTipEntity.enabled = false
                     viewModel.indexTipEntity.enabled = false
                     wasPinching = false
@@ -213,10 +247,26 @@ fun ImmersiveScene() {
                         // Tilted back so the panel faces more toward the user's downward gaze -
                         // EulerAngles fields are DEGREES, not radians (confirmed by decompiling
                         // foundation-0.13.3-sources.jar's EulerAngles.toQuat(), which does its own
-                        // `* (PI / 180.0)` conversion internally). Sign direction is unverified - the
-                        // SDK docs don't state which way positive pitch tilts, and no other entity in
-                        // this project sets pitch. If this reads backwards on device, flip to -22f.
-                        setEulerAngles(EulerAngles(pitch = 22f, yaw = 0f, roll = 0f))
+                        // `* (PI / 180.0)` conversion internally).
+                        //
+                        // Sign IS derivable without a headset, from the SDK's own documented
+                        // conventions: Matrix4.kt documents rotation about the X-axis as following the
+                        // right-hand rule in a right-handed coordinate system, and EulerAngles.toQuat()
+                        // builds the pitch component as Quat(sin(th/2), 0, 0, cos(th/2)) - the standard
+                        // right-hand-rule rotation about +X. TransformComponent.eulerAngles's setter
+                        // applies this directly as local rotation, and this HUD entity has no parent,
+                        // so local space = world space here. This project's own precedent
+                        // (ecs/SubtitleFollowComponent.kt, relativePosition = Vector3(0, -0.3, -1.0))
+                        // establishes that "in front of the user" is negative Z, and this panel sits at
+                        // (0, 0.9, -1.5) with the user near the origin, so its front-facing normal is
+                        // local +Z at identity rotation. Under the right-hand rule about +X, a positive
+                        // pitch rotates the +Z normal toward -Y (downward) - front-tilting-down, the
+                        // opposite of "tilted back to face the user's downward gaze". pitch = -22f
+                        // produces a normal of (0, +0.375, +0.927) - pointing up and toward the user -
+                        // which is the intended direction. On-device visual confirmation is still the
+                        // final check: if this still reads backwards on device, the derivation above
+                        // should be re-examined.
+                        setEulerAngles(EulerAngles(pitch = -22f, yaw = 0f, roll = 0f))
                     }
                     content.addEntity(this)
                 }

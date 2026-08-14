@@ -2,6 +2,7 @@ package tech.illusion.spaceplayer.ui
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -31,6 +32,8 @@ import tech.illusion.spaceplayer.playback.StereoMode
 import tech.illusion.spaceplayer.subtitle.SrtParser
 import tech.illusion.spaceplayer.subtitle.SubtitleCue
 import tech.illusion.spaceplayer.subtitle.SubtitleCueLookup
+
+private const val TAG = "PlaybackViewModel"
 
 const val SCREEN_WIDTH_METERS = 1.6f
 const val SCREEN_HEIGHT_METERS = 0.9f
@@ -83,14 +86,19 @@ class PlaybackViewModel(
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private fun assembleHandMarkersIfNeeded() {
-        if (handMarkersAssembled) return
-        PlaybackEntityAssembler.assembleHandMarkerEntity(thumbTipEntity, HAND_MARKER_RADIUS_METERS)
-        PlaybackEntityAssembler.assembleHandMarkerEntity(indexTipEntity, HAND_MARKER_RADIUS_METERS)
+        if (!handMarkersAssembled) {
+            PlaybackEntityAssembler.assembleHandMarkerEntity(thumbTipEntity, HAND_MARKER_RADIUS_METERS)
+            PlaybackEntityAssembler.assembleHandMarkerEntity(indexTipEntity, HAND_MARKER_RADIUS_METERS)
+            handMarkersAssembled = true
+        }
         // Hidden until the first frame of real hand-tracking data arrives - see the per-frame loop
         // in ImmersiveScene.kt (Task 8) that flips these back on/off based on tracking availability.
+        // Reset unconditionally (not just on first assembly) so the second and later videos played in
+        // the same session don't start with markers visually enabled/at a stale position left over
+        // from the previous video - this call runs once per startPlayback(), not just once per
+        // PlaybackViewModel instance.
         thumbTipEntity.enabled = false
         indexTipEntity.enabled = false
-        handMarkersAssembled = true
     }
 
     private var subtitleCues: List<SubtitleCue> = emptyList()
@@ -300,7 +308,10 @@ class PlaybackViewModel(
         backgroundScope.launch { provider.start() }
         val handProvider = HandTrackingProvider()
         handTrackingProvider = handProvider
-        backgroundScope.launch { handProvider.start() }
+        backgroundScope.launch {
+            val result = handProvider.start()
+            Log.i(TAG, "HandTrackingProvider start result=$result supportState=${handProvider.supportState}")
+        }
         currentStereoMode.value = item.stereoMode
         if (item.projection == Projection.FLAT) {
             // Applied before applyProjection so the screen lands on the right anchor straight away.
