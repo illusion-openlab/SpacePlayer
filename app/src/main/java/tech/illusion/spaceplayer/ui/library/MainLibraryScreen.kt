@@ -96,6 +96,13 @@ private val FOOTER_HEIGHT = 56.dp
 // width-constrained content slot.
 private val SIDEBAR_WIDTH = 220.dp
 
+// SideNavigationItem's natural height is only the SDK default (~48dp: a 32dp icon box plus 8dp top/
+// bottom content padding) - explicitly taller per user request. The SDK applies the caller's
+// modifier BEFORE its own contentPadding (confirmed by decompiling design-0.13.3-sources.jar's
+// SideNavigation.kt), so a plain .height() here sets the outer row height cleanly without being
+// squeezed by the internal padding.
+private val NAV_ITEM_HEIGHT = 64.dp
+
 private fun LibraryCategory.iconRes(): Int = when (this) {
     LibraryCategory.LIBRARY -> R.drawable.ic_nav_library
     LibraryCategory.DOWNLOADS -> R.drawable.ic_nav_download
@@ -269,6 +276,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                     selectedContainerColor = SpacePlayerSurfaceSelected,
                                 ),
                                 modifier = Modifier
+                                    .height(NAV_ITEM_HEIGHT)
                                     .padding(bottom = 4.dp)
                                     .clickable(
                                         interactionSource = categoryInteractionSource,
