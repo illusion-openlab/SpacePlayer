@@ -16,6 +16,7 @@ import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.foundation.content.SpatialView
 import com.pico.spatial.ui.foundation.content.SpatialViewAttachments
 import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
@@ -74,6 +75,17 @@ fun ImmersiveScene() {
         }
     }
 
+    // Auto-hide the HUD once, 5s after the first frame renders (not 5s after startPlayback() - a
+    // slow-loading video would otherwise burn part or all of that window under the loading overlay).
+    // hasFirstFrameRendered only goes false->true once per session, so this LaunchedEffect body only
+    // runs once per playback - it does not re-fire if the user pinches the HUD back on afterward.
+    LaunchedEffect(viewModel.manager.hasFirstFrameRendered) {
+        if (viewModel.manager.hasFirstFrameRendered) {
+            delay(5000)
+            viewModel.hideHud()
+        }
+    }
+
     // SpatialView's own `update` parameter is NOT a per-frame render loop, despite reading like
     // one - its KDoc says it fires once after `initial`, then again only when a Compose state
     // value read inside that lambda changes. Position polling, subtitle lookup, and the lagged
@@ -98,6 +110,8 @@ fun ImmersiveScene() {
                 }
                 subtitleEntity?.enabled =
                     !viewModel.showLoadingOverlay && viewModel.currentSubtitleText.isNotEmpty()
+                attachments.entity(HUD_ATTACHMENT_ID)?.enabled =
+                    !viewModel.showLoadingOverlay && viewModel.isHudVisible
             }
         }
     }
@@ -188,12 +202,12 @@ fun ImmersiveScene() {
                 }
             },
             update = { _, attachments ->
-                // Event-driven, not per-frame - this re-runs whenever showLoadingOverlay's own
-                // reads (manager.state / hasFirstFrameRendered) change, which is exactly when
-                // these two visibility flags need to flip. See the LaunchedEffect above for the
-                // genuinely-continuous per-frame work.
+                // Event-driven, not per-frame - re-runs whenever showLoadingOverlay's own reads
+                // (manager.state / hasFirstFrameRendered) change. HUD's `.enabled` used to be written
+                // here too, but it now has a second condition (isHudVisible) that must be re-checked
+                // every frame (5s auto-hide timer, pinch toggle) - moved to the per-frame
+                // LaunchedEffect loop above so there's exactly one writer for that property.
                 attachments.entity(LOADING_ATTACHMENT_ID)?.enabled = viewModel.showLoadingOverlay
-                attachments.entity(HUD_ATTACHMENT_ID)?.enabled = !viewModel.showLoadingOverlay
             },
         )
     }

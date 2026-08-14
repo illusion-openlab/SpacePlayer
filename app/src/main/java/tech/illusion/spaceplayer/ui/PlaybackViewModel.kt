@@ -92,6 +92,22 @@ class PlaybackViewModel(
     /** Set when playback reaches the end - ImmersiveScene observes this to return to the main window. */
     var returnToMainWindowRequested by mutableStateOf(false)
         private set
+
+    /** Drives the HUD AttachmentPanel's `.enabled` from ImmersiveScene's per-frame loop - starts
+     * visible each session, auto-hides once 5s after the first frame renders, then only changes via
+     * a pinch gesture (Task 8's [toggleHudVisibility] call). */
+    var isHudVisible by mutableStateOf(true)
+        private set
+
+    fun toggleHudVisibility() {
+        isHudVisible = !isHudVisible
+    }
+
+    /** One-directional, not a toggle - called once from the 5s auto-hide timer so it can't
+     * accidentally re-show a panel the user already pinched back on within that window. */
+    fun hideHud() {
+        isHudVisible = false
+    }
     val screenEntity = Entity()
     val sphereEntity = Entity()
     val hemisphereEntity = Entity()
@@ -251,6 +267,7 @@ class PlaybackViewModel(
         currentItem = item
         subtitleCues = loadSubtitleCues(item.subtitleUri)
         returnToMainWindowRequested = false
+        isHudVisible = true
         // Assign the provider immediately (ImmersiveScene's per-frame loop reads it null-safely and
         // just sees a default zero pose until start() actually finishes) - only the blocking start()
         // call itself is pushed off the main thread, so the click handler returns right away.
