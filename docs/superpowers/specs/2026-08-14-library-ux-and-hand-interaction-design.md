@@ -72,8 +72,10 @@ class LibraryViewModel(
 `ImmersiveScene.kt` 的 `initial` 块里，给 HUD 实体的 `TransformComponent` 除了现有的 `setPosition` 之外，追加：
 
 ```kotlin
-setEulerAngles(EulerAngles(pitch = Math.toRadians(22.0).toFloat(), yaw = 0f, roll = 0f))
+setEulerAngles(EulerAngles(pitch = 22f, yaw = 0f, roll = 0f))
 ```
+
+（反编译 `foundation-0.13.3-sources.jar` 里的 `EulerAngles.kt` 确认：三个角度字段的单位是**度数**，不是弧度——`toQuat()` 内部自己做 `pitch * (PI / 180.0)` 转换。设计草稿阶段口头假设过弧度，这里改正。）
 
 **已知不确定项，如实标注**：`pitch` 为正是让面板顶部远离用户（后仰）还是让面板顶部靠近用户（前俯），SDK 文档没有给出符号约定，项目里目前没有任何实体设置过 `pitch`，找不到参照。计划里会把这一步标注为"先按 `+22°` 装机看效果，如果方向反了直接改成 `-22°`，这是运行时才能确认的一行数值，不影响其余实现"。
 
