@@ -31,7 +31,7 @@ Stage(id = "ImmersiveStage")（沉浸容器，仅在点击"开始播放"时 open
 
 关键约束：
 
-- `CypressMediaPlayer` 只在点击播放时创建一次；`ScreenEntity` / `SphereEntity` 二选一 `enabled`（由视频的 `projection` 决定，播放期间不切换）。
+- `CypressMediaPlayer` 只在点击播放时创建一次；`ScreenEntity` / `SphereEntity` 二选一 `enabled`（由视频的 `projection` 决定）。**投影可以在播放期间热切换**（2026-08-10 修订：原文写的是"播放期间不切换"，那是为简化架构自己加的约束，不是 SDK 限制）——沉浸 HUD 的格式修正就走这条路：三个视频实体共用同一个 `CypressMediaPlayer`，切换只改实体 `enabled`（首次用到时才 assemble），播放器完全不碰，进度/音量/缓冲都保留。立体格式同理，直接 `VideoMaterial.setDimensionMode()` 热改。已在模拟器实测：三次切换（180°⇄平面⇄360°）播放位置持续前进、状态全程 `PLAYING`。
 - `EnvironmentLayer` 仅对平面视频生效，三态互斥，可随时切换，且切换过程完全不触碰 `CypressMediaPlayer`。
 - 退出播放（HUD 的退出按钮）即暂停/停止播放、`closeStage()`、释放 `CypressMediaPlayer`，回到主窗口。
 
@@ -77,9 +77,12 @@ data class PlaybackHistoryEntry(
 1. **容器探测**（优先级最高，仅对 MV-HEVC 有意义）：用 `MediaExtractor` / `MediaFormat` 探测 mov/mp4 容器内是否存在多视图（multiview / MV-HEVC）轨道标识，命中则 `stereoMode = MULTIVIEW_MVHEVC`，`formatSource = DETECTED_CONTAINER`。
 2. **文件名关键词识别**：解析常见业界约定关键词（`_180_`/`_180x180`、`_360_`/`_equirect`、`_sbs`/`_3dh`、`_tb`/`_ou`/`_3dv`、`_mvhevc`），命中则设置对应 `projection`/`stereoMode`，`formatSource = DETECTED_FILENAME`。
 3. **默认兜底**：两者都未命中时，`projection = FLAT`、`stereoMode = MONO`，`formatSource = DEFAULT`。
-4. **手动覆盖**：列表项内的轻量弹层提供"修正格式"入口（选择投影类型 + 立体格式），保存为 `MANUAL_OVERRIDE` 并持久化（本地存储，按 `uri` 或文件内容 hash 做 key，避免文件改名后覆盖记录丢失）。
+4. **手动覆盖**：提供"投影类型 + 立体格式"两个下拉，保存为 `MANUAL_OVERRIDE` 并持久化（本地存储，按 `uri` 或文件内容 hash 做 key，避免文件改名后覆盖记录丢失）。
 
-"修正格式"提示图标仅在 `formatSource == DEFAULT` 时显示——即容器探测和文件名都未命中、纯靠兜底猜测为平面/单目的情况；`DETECTED_CONTAINER` 和 `DETECTED_FILENAME` 视为有依据的识别结果，不主动提示，但用户仍可随时手动打开该弹层覆盖。
+**2026-08-10 修订**：原文把手动覆盖入口放在列表项内的轻量弹层里，且只在 `formatSource == DEFAULT`（纯兜底猜测）时才提示。实际实现有两处调整：
+
+- 入口从列表项弹层挪到了**主窗口底部操作栏**（与环境选择器、"开始播放"同一行），并且**沉浸 HUD 的控制行里也有同一组下拉**（见第 4 节）——发现识别错了不必退出沉浸再回主窗口改。两处共用同一个组件与同一条持久化路径。
+- 两个下拉**始终显示**，不再按 `formatSource == DEFAULT` 隐藏：选中任意一项都会把来源改成 `MANUAL_OVERRIDE`，如果按原规则隐藏，就会出现"选完一次这组控件自己消失"的副作用。识别来源仍然显示在卡片副标题上（容器探测／文件名识别／默认兜底／手动指定），用来区分"有依据的识别"和"兜底猜测"。
 
 ### 文件库管理
 
@@ -150,6 +153,8 @@ Row
 ├── 进度条（拖动预览，松手才 seekTo）
 ├── 音量
 ├── 环境切换（仅平面视频显示，180/360 替换为提示文案）
+├── 格式修正（2026-08-10 新增）—— 投影 + 立体格式两个下拉，与环境切换同处控制行、中间用分割线分组；
+│                                  热切换不中断播放，结果同样写回 `VideoPreferencesStore`，退出后主窗口卡片徽标同步
 └── 退出（回到主窗口）
 ```
 

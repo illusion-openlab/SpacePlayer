@@ -34,6 +34,7 @@ import com.pico.spatial.ui.design.BadgeDefaults
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
+import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import tech.illusion.spaceplayer.library.VideoItem
@@ -84,12 +85,13 @@ fun VideoGridCard(
     Column(
         modifier = modifier
             .clip(shape)
+            // Before clickable and after clip, per spatial-ui-design-style's modifier order, so the
+            // native hover follows this card's rounded shape. 0.13.3 does have the simple overload
+            // (SpatialHoverEffectStyle.kt) alongside the low-level block form in SpatialHoverEffect.kt -
+            // an earlier note in AGENTS.md claiming only the block API exists was wrong.
+            .spatialHoverEffect()
             .background(SpacePlayerSurface)
             .border(if (selected) 2.dp else 1.dp, if (selected) SpacePlayerAccent else SpacePlayerBorder, shape)
-            // No spatialHoverEffect here: this project's SDK (0.13.3) only exposes the low-level
-            // SpatialHoverEffectRootScope block API for custom composables (no simple
-            // enabled-flag overload), so this custom card relies on clickable's built-in
-            // indication instead of a native hover animation.
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,

@@ -60,6 +60,7 @@ import com.pico.spatial.ui.design.SideNavigationItemDefaults
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.design.ToggleableChip
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
+import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
 import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
 import com.pico.spatial.ui.platform.containers.StageStyle
 import kotlinx.coroutines.launch
@@ -169,6 +170,23 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
         if (hasVideoPermission) {
             libraryViewModel.refreshLibrary()
             libraryViewModel.refreshDownloads()
+        }
+    }
+
+    // A format correction made from inside the immersive HUD is persisted to VideoPreferencesStore,
+    // but the grid renders VideoItems snapshotted at the last refresh - re-read them once immersive
+    // playback ends so the corrected card's badge and the bottom bar's menus agree with what the
+    // HUD was just showing. Re-selecting by uri is needed because selectedItem is its own snapshot,
+    // not a value derived from libraryItems/downloadsItems (same reason as the subtitle picker).
+    LaunchedEffect(playbackViewModel.isImmersive.value) {
+        if (!playbackViewModel.isImmersive.value && hasVideoPermission) {
+            libraryViewModel.refreshLibrary()
+            libraryViewModel.refreshDownloads()
+            libraryViewModel.selectedItem?.let { previous ->
+                (libraryViewModel.libraryItems + libraryViewModel.downloadsItems)
+                    .find { it.uri == previous.uri }
+                    ?.let { libraryViewModel.selectItem(it) }
+            }
         }
     }
 
@@ -291,6 +309,9 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                             .fillMaxWidth()
                             .height(FOOTER_HEIGHT)
                             .dashedBorder(SpacePlayerAccent, RoundedCornerShape(12.dp))
+                            // dashedBorder clips first, so the native hover picks up the rounded
+                            // shape; same reasoning as VideoGridCard's.
+                            .spatialHoverEffect()
                             .clickable(
                                 interactionSource = importInteractionSource,
                                 indication = LocalIndication.current,

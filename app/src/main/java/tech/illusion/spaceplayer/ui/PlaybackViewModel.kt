@@ -7,9 +7,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.pico.spatial.core.ecs.Entity
 import com.pico.spatial.core.ecs.TransformComponent
+import com.pico.spatial.core.ecs.resource.VideoMaterial
+import com.pico.spatial.core.ecs.video.VideoDimensionMode
 import com.pico.spatial.core.math.Vector3
 import com.pico.spatial.tracking.hmd.HMDTrackingProvider
 import tech.illusion.spaceplayer.ecs.PlaybackEntityAssembler
+import tech.illusion.spaceplayer.library.FormatSource
 import tech.illusion.spaceplayer.library.PlaybackHistoryStore
 import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.library.VideoPreferencesStore
@@ -18,6 +21,7 @@ import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.PlaybackManager
 import tech.illusion.spaceplayer.playback.PlaybackState
 import tech.illusion.spaceplayer.playback.Projection
+import tech.illusion.spaceplayer.playback.StereoMode
 import tech.illusion.spaceplayer.subtitle.SrtParser
 import tech.illusion.spaceplayer.subtitle.SubtitleCue
 import tech.illusion.spaceplayer.subtitle.SubtitleCueLookup
@@ -40,7 +44,16 @@ class PlaybackViewModel(
     private val preferencesStore: VideoPreferencesStore,
 ) {
     val manager = PlaybackManager(context)
-    val hmdTrackingProvider = HMDTrackingProvider()
+
+    // A fresh instance per playback session, not a single instance reused for the process's whole
+    // lifetime - the SDK's own HMD-tracking sample scopes HMDTrackingProvider to one start()/stop()
+    // pair per remember/DisposableEffect lifecycle. Reusing one instance across many back-to-back
+    // start()/stop() cycles (auto-return -> tap next video -> start() again) is what produced a real
+    // ANR on device: the main thread blocked for 5+ seconds inside the native tracking-start call
+    // (confirmed via `dumpsys dropbox --print`'s ANR stack trace, ~2026-08-13, ending in
+    // spatial::jobs::JobWaiter::wait beneath HMDTrackingDataSource.nativeStartHMDTrackingDataSource).
+    var hmdTrackingProvider: HMDTrackingProvider? = null
+        private set
 
     private var subtitleCues: List<SubtitleCue> = emptyList()
 
@@ -77,18 +90,26 @@ class PlaybackViewModel(
     var currentEnvironment = mutableStateOf(Environment.CINEMA)
         private set
 
-    // Compose-observable mirror of `screenEntity.enabled` - the HUD reads this to decide whether
-    // to show the environment switcher (only meaningful for flat video), and a plain field read
-    // of an SDK Entity's `enabled` property wouldn't trigger recomposition on its own.
-    var isFlatProjection = mutableStateOf(true)
+    // Compose-observable format state: the HUD's two format-correction menus show these as their
+    // current values, and `currentProjection == FLAT` also gates the environment switcher (only
+    // meaningful for flat video). Kept as state rather than read off the entities, since a plain
+    // field read of an SDK Entity's `enabled` property wouldn't trigger recomposition on its own.
+    var currentProjection = mutableStateOf(Projection.FLAT)
+        private set
+
+    var currentStereoMode = mutableStateOf(StereoMode.MONO)
         private set
 
     var currentItem: VideoItem? = null
         private set
 
-    private var screenAssembled = false
-    private var sphereAssembled = false
-    private var hemisphereAssembled = false
+    // Each assembled video entity owns its own VideoMaterial instance; these references are how
+    // stereo-format correction reaches them later (VideoPlayerComponent has setMaterial but no
+    // getter). Non-null also means "this entity is already assembled", so there are no separate
+    // assembled flags to keep in sync.
+    private var screenMaterial: VideoMaterial? = null
+    private var sphereMaterial: VideoMaterial? = null
+    private var hemisphereMaterial: VideoMaterial? = null
     private var environmentsAssembled = false
 
     private fun disableAllVideoEntities() {
@@ -136,53 +157,92 @@ class PlaybackViewModel(
         updateEnvironmentVisibility()
     }
 
+    /**
+     * Shows the entity matching [projection] (assembling it on first use) and hides the other two,
+     * then applies [dimensionMode] to that entity's material. All three entities are driven by the
+     * same [PlaybackManager.player], so this never touches the player itself - which is what makes
+     * it safe to call both at playback start and mid-playback from [correctFormat] without
+     * restarting or rebuffering.
+     *
+     * The dimension mode is (re)applied on every call rather than only at assembly time: entities
+     * are assembled once and outlive a single playback session, so a second video with a different
+     * stereo format would otherwise keep the first video's mode.
+     */
+    private fun applyProjection(projection: Projection, dimensionMode: VideoDimensionMode) {
+        when (projection) {
+            Projection.FLAT -> {
+                assembleEnvironmentsIfNeeded()
+                val material = screenMaterial ?: PlaybackEntityAssembler.assembleScreenEntity(
+                    screenEntity, manager.player, SCREEN_WIDTH_METERS, SCREEN_HEIGHT_METERS, dimensionMode,
+                ).also { screenMaterial = it }
+                material.setDimensionMode(dimensionMode)
+                disableAllVideoEntities()
+                screenEntity.enabled = true
+            }
+            Projection.SPHERE_360 -> {
+                val material = sphereMaterial ?: PlaybackEntityAssembler.assembleSphereEntity(
+                    sphereEntity, manager.player, SPHERE_RADIUS_METERS, FULL_SPHERE_FOV_DEGREES, dimensionMode,
+                ).also { sphereMaterial = it }
+                material.setDimensionMode(dimensionMode)
+                disableAllVideoEntities()
+                sphereEntity.enabled = true
+            }
+            Projection.HEMISPHERE_180 -> {
+                val material = hemisphereMaterial ?: PlaybackEntityAssembler.assembleSphereEntity(
+                    hemisphereEntity, manager.player, SPHERE_RADIUS_METERS, HEMISPHERE_FOV_DEGREES, dimensionMode,
+                ).also { hemisphereMaterial = it }
+                material.setDimensionMode(dimensionMode)
+                disableAllVideoEntities()
+                hemisphereEntity.enabled = true
+            }
+        }
+        currentProjection.value = projection
+        repositionScreenForCurrentEnvironment()
+        // Reads screenEntity.enabled, so for 180°/360° this turns all three skyboxes off.
+        updateEnvironmentVisibility()
+    }
+
+    /**
+     * Format correction from inside the immersive HUD - the same correction the library's bottom bar
+     * makes before playback, applied live: stereo format goes straight to the already-assembled
+     * materials, projection swaps which video entity is visible, and neither path recreates the
+     * `CypressMediaPlayer`, so position, volume and buffered data all survive.
+     *
+     * Persisted through the same [VideoPreferencesStore.setFormatOverride] path as the library
+     * entry point, so the correction outlives this session and the library card's badge picks it up
+     * after the refresh triggered on return to the main window.
+     */
+    fun correctFormat(projection: Projection, stereoMode: StereoMode) {
+        val item = currentItem ?: return
+        if (projection == currentProjection.value && stereoMode == currentStereoMode.value) return
+        val dimensionMode = stereoMode.toVideoDimensionMode()
+        currentStereoMode.value = stereoMode
+        // Update every assembled material, not just the visible one, so switching projection later
+        // doesn't fall back to the stereo mode captured when that entity happened to be assembled.
+        listOfNotNull(screenMaterial, sphereMaterial, hemisphereMaterial)
+            .forEach { it.setDimensionMode(dimensionMode) }
+        if (projection != currentProjection.value) {
+            applyProjection(projection, dimensionMode)
+        }
+        preferencesStore.setFormatOverride(item.uri, projection, stereoMode)
+        currentItem = item.copy(
+            projection = projection,
+            stereoMode = stereoMode,
+            formatSource = FormatSource.MANUAL_OVERRIDE,
+        )
+    }
+
     fun startPlayback(item: VideoItem) {
         currentItem = item
         subtitleCues = loadSubtitleCues(item.subtitleUri)
         returnToMainWindowRequested = false
-        hmdTrackingProvider.start()
-        val dimensionMode = item.stereoMode.toVideoDimensionMode()
-        when (item.projection) {
-            Projection.FLAT -> {
-                assembleEnvironmentsIfNeeded()
-                if (!screenAssembled) {
-                    PlaybackEntityAssembler.assembleScreenEntity(
-                        screenEntity, manager.player, SCREEN_WIDTH_METERS, SCREEN_HEIGHT_METERS, dimensionMode,
-                    )
-                    screenAssembled = true
-                }
-                disableAllVideoEntities()
-                screenEntity.enabled = true
-                isFlatProjection.value = true
-                currentEnvironment.value = item.preferredEnvironment ?: currentEnvironment.value
-                repositionScreenForCurrentEnvironment()
-                updateEnvironmentVisibility()
-            }
-            Projection.SPHERE_360 -> {
-                if (!sphereAssembled) {
-                    PlaybackEntityAssembler.assembleSphereEntity(
-                        sphereEntity, manager.player, SPHERE_RADIUS_METERS, FULL_SPHERE_FOV_DEGREES, dimensionMode,
-                    )
-                    sphereAssembled = true
-                }
-                disableAllVideoEntities()
-                sphereEntity.enabled = true
-                isFlatProjection.value = false
-                updateEnvironmentVisibility() // screenEntity is now disabled, so this turns all 3 off
-            }
-            Projection.HEMISPHERE_180 -> {
-                if (!hemisphereAssembled) {
-                    PlaybackEntityAssembler.assembleSphereEntity(
-                        hemisphereEntity, manager.player, SPHERE_RADIUS_METERS, HEMISPHERE_FOV_DEGREES, dimensionMode,
-                    )
-                    hemisphereAssembled = true
-                }
-                disableAllVideoEntities()
-                hemisphereEntity.enabled = true
-                isFlatProjection.value = false
-                updateEnvironmentVisibility() // screenEntity is now disabled, so this turns all 3 off
-            }
+        hmdTrackingProvider = HMDTrackingProvider().also { it.start() }
+        currentStereoMode.value = item.stereoMode
+        if (item.projection == Projection.FLAT) {
+            // Applied before applyProjection so the screen lands on the right anchor straight away.
+            currentEnvironment.value = item.preferredEnvironment ?: currentEnvironment.value
         }
+        applyProjection(item.projection, item.stereoMode.toVideoDimensionMode())
         manager.onFirstFrameRendered = {
             historyStore.recordPlayed(item.uri.toString(), System.currentTimeMillis())
         }
@@ -195,11 +255,12 @@ class PlaybackViewModel(
 
     fun exitImmersive() {
         val item = currentItem
-        if (item != null && isFlatProjection.value) {
+        if (item != null && currentProjection.value == Projection.FLAT) {
             preferencesStore.setPreferredEnvironment(item.uri, currentEnvironment.value)
         }
         manager.pause()
-        hmdTrackingProvider.stop()
+        hmdTrackingProvider?.stop()
+        hmdTrackingProvider = null
         isImmersive.value = false
         returnToMainWindowRequested = false
     }
@@ -245,6 +306,7 @@ class PlaybackViewModel(
 
     fun onCleared() {
         manager.reset()
-        hmdTrackingProvider.stop()
+        hmdTrackingProvider?.stop()
+        hmdTrackingProvider = null
     }
 }

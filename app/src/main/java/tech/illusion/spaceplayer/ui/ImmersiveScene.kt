@@ -76,7 +76,7 @@ fun ImmersiveScene() {
 
                 val attachments = spatialAttachments ?: return@withFrameNanos
                 val subtitleEntity = attachments.entity(SUBTITLE_ATTACHMENT_ID)
-                val hmdPose = viewModel.hmdTrackingProvider.latestData?.hmdPose
+                val hmdPose = viewModel.hmdTrackingProvider?.latestData?.hmdPose
                 if (subtitleEntity != null && hmdPose != null) {
                     applySubtitleFollow(subtitleEntity, subtitleFollow, hmdPose, deltaTime)
                 }
@@ -95,13 +95,17 @@ fun ImmersiveScene() {
                 AttachmentPanel(id = HUD_ATTACHMENT_ID) {
                     PlaybackHud(
                         state = viewModel.manager.state,
-                        isFlatProjection = viewModel.isFlatProjection.value,
+                        currentProjection = viewModel.currentProjection.value,
+                        currentStereoMode = viewModel.currentStereoMode.value,
                         currentEnvironment = viewModel.currentEnvironment.value,
                         currentPositionMs = viewModel.currentPositionMs,
                         durationMs = viewModel.durationMs,
                         isMuted = viewModel.isMuted,
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSelectEnvironment = { viewModel.switchEnvironment(it) },
+                        onCorrectFormat = { projection, stereoMode ->
+                            viewModel.correctFormat(projection, stereoMode)
+                        },
                         onSeek = { viewModel.seekTo(it) },
                         onToggleMute = { viewModel.toggleMute() },
                         onReturnToMainWindow = { returnToMainWindow() },

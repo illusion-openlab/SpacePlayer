@@ -36,11 +36,14 @@ import com.pico.spatial.ui.design.Slider
 import com.pico.spatial.ui.design.SliderDefaults
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.design.ToggleableChip
+import com.pico.spatial.ui.design.menu.MenuItem
 import com.pico.spatial.ui.foundation.material.backgroundMaterial
 import com.pico.spatial.ui.platform.Material
 import tech.illusion.spaceplayer.R
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.PlaybackState
+import tech.illusion.spaceplayer.playback.Projection
+import tech.illusion.spaceplayer.playback.StereoMode
 import tech.illusion.spaceplayer.ui.library.dotColor
 
 // This HUD floats over the video/skybox on top of a Material.Regular glass panel whose actual
@@ -69,6 +72,12 @@ private val HudPrimaryIconContent = Color(0xFFFFFFFF) // design-style: fixed-fig
 private val HudAccentContainer = Color(0xCC97A8D8) // design-style: fixed-figma-color HUD active-chip fill (glass)
 private val HudAccentContent = Color(0xFFFFFFFF) // design-style: fixed-figma-color HUD active-chip content
 
+// Format-correction pills: same component as the library bottom bar's, restyled for this glass
+// panel - a barely-there fill plus a visible hairline border, so they read as "openable menus"
+// rather than as another selected/unselected chip in the environment group next to them.
+private val HudPillContainer = Color(0x12FFFFFF) // design-style: fixed-figma-color HUD format-pill fill
+private val HudPillBorder = Color(0x38FFFFFF) // design-style: fixed-figma-color HUD format-pill border
+
 // AttachmentPanel defaults to WRAP_CONTENT (confirmed via decompiled core-0.13.3-sources.jar's
 // AttachmentPanelComponent.kt), which the native side measures with an AT_MOST bound of
 // MAX_PANEL_SIZE_DP (2048dp) - so any fillMaxWidth() inside an unconstrained panel stretches all
@@ -94,17 +103,20 @@ private fun HudDivider() {
 @Composable
 fun PlaybackHud(
     state: PlaybackState,
-    isFlatProjection: Boolean,
+    currentProjection: Projection,
+    currentStereoMode: StereoMode,
     currentEnvironment: Environment,
     currentPositionMs: Long,
     durationMs: Long,
     isMuted: Boolean,
     onPlayPause: () -> Unit,
     onSelectEnvironment: (Environment) -> Unit,
+    onCorrectFormat: (Projection, StereoMode) -> Unit,
     onSeek: (Long) -> Unit,
     onToggleMute: () -> Unit,
     onReturnToMainWindow: () -> Unit,
 ) {
+    val isFlatProjection = currentProjection == Projection.FLAT
     PicoTheme {
         Box(
             modifier = Modifier
@@ -168,6 +180,48 @@ fun PlaybackHud(
                             color = HudTimeTextColor,
                             style = PicoTheme.typography.bodyMedium,
                         )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    HudDivider()
+                    Spacer(modifier = Modifier.width(12.dp))
+                    // Format correction - the same two menus the library bottom bar shows, grouped
+                    // after the environment chips behind a divider: both groups set "how this video
+                    // is presented", while the controls on either end (play, mute, return) act on
+                    // playback itself.
+                    val pillColors = FormatMenuButtonColors(
+                        containerColor = HudPillContainer,
+                        contentColor = HudChipContent,
+                        borderColor = HudPillBorder,
+                        trailingContentColor = HudTimeTextColor,
+                    )
+                    FormatMenuButton(
+                        label = currentProjection.label(),
+                        modifier = Modifier.padding(end = 6.dp),
+                        colors = pillColors,
+                    ) { collapse ->
+                        Projection.entries.forEach { candidate ->
+                            MenuItem(
+                                title = { Text(candidate.label()) },
+                                onClick = {
+                                    onCorrectFormat(candidate, currentStereoMode)
+                                    collapse()
+                                },
+                            )
+                        }
+                    }
+                    FormatMenuButton(
+                        label = currentStereoMode.shortLabel(),
+                        colors = pillColors,
+                    ) { collapse ->
+                        StereoMode.entries.forEach { candidate ->
+                            MenuItem(
+                                title = { Text(candidate.shortLabel()) },
+                                onClick = {
+                                    onCorrectFormat(currentProjection, candidate)
+                                    collapse()
+                                },
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.weight(1f))
                     IconButton(

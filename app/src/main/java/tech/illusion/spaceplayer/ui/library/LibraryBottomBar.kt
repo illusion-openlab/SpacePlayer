@@ -5,13 +5,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -24,17 +22,16 @@ import com.pico.spatial.ui.design.Button
 import com.pico.spatial.ui.design.ButtonDefaults
 import com.pico.spatial.ui.design.ChipsDefaults
 import com.pico.spatial.ui.design.PicoTheme
-import com.pico.spatial.ui.design.SegmentControl
-import com.pico.spatial.ui.design.SegmentItem
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.design.ToggleableChip
+import com.pico.spatial.ui.design.menu.MenuItem
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import tech.illusion.spaceplayer.R
-import tech.illusion.spaceplayer.library.FormatSource
 import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.Projection
 import tech.illusion.spaceplayer.playback.StereoMode
+import tech.illusion.spaceplayer.ui.FormatMenuButton
 import tech.illusion.spaceplayer.ui.label
 import tech.illusion.spaceplayer.ui.shortLabel
 
@@ -84,32 +81,36 @@ fun LibraryBottomBar(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // "修正格式"入口只在纯兜底猜测时出现，见设计稿第 2 节 - the selectable types themselves
-        // sit inline in this row (two SegmentControls, same widget the old FormatCorrectionPopup
-        // used), not collapsed behind a single button/menu trigger.
-        if (selectedItem != null && selectedItem.formatSource == FormatSource.DEFAULT) {
-            // SegmentControl's own Row has no fillMaxWidth of its own, but each SegmentItem inside
-            // it uses Modifier.weight(1f) - a Compose Row with a weighted child always expands to
-            // its full incoming max width to have space to distribute, so without an explicit
-            // width here a SegmentControl silently swallows the rest of this Row. IntrinsicSize.Max
-            // (not Min) is required: Min sizes to the longest *unbreakable* word, which is smaller
-            // than a multi-word label like "Side-by-side 3D" and forces that label to wrap into two
-            // lines - Max sizes to the label's full single-line width instead.
-            SegmentControl(modifier = Modifier.width(IntrinsicSize.Max).padding(end = 8.dp)) {
+        // 投影/立体格式各自封装成一个菜单按钮，始终显示（不再按 formatSource == DEFAULT 隐藏）——
+        // 之前用 SegmentControl 内联展开选项时，选中任何一项都会把 formatSource 从 DEFAULT 改成
+        // MANUAL_OVERRIDE，导致这一整块选项随之消失，用户反馈这是不需要的"选完就关闭修正模式"的
+        // 副作用。菜单按钮只是显示当前值，选值不会让按钮本身消失，天然规避了这个问题。
+        if (selectedItem != null) {
+            FormatMenuButton(
+                label = selectedItem.projection.label(),
+                modifier = Modifier.padding(end = 8.dp),
+            ) { collapse ->
                 Projection.entries.forEach { candidate ->
-                    SegmentItem(
-                        selected = selectedItem.projection == candidate,
-                        onClick = { onFormatChange(candidate, selectedItem.stereoMode) },
+                    MenuItem(
                         title = { Text(candidate.label()) },
+                        onClick = {
+                            onFormatChange(candidate, selectedItem.stereoMode)
+                            collapse()
+                        },
                     )
                 }
             }
-            SegmentControl(modifier = Modifier.width(IntrinsicSize.Max).padding(end = 8.dp)) {
+            FormatMenuButton(
+                label = selectedItem.stereoMode.shortLabel(),
+                modifier = Modifier.padding(end = 8.dp),
+            ) { collapse ->
                 StereoMode.entries.forEach { candidate ->
-                    SegmentItem(
-                        selected = selectedItem.stereoMode == candidate,
-                        onClick = { onFormatChange(selectedItem.projection, candidate) },
+                    MenuItem(
                         title = { Text(candidate.shortLabel()) },
+                        onClick = {
+                            onFormatChange(selectedItem.projection, candidate)
+                            collapse()
+                        },
                     )
                 }
             }
@@ -154,3 +155,4 @@ fun LibraryBottomBar(
         }
     }
 }
+

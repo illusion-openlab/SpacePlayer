@@ -17,13 +17,19 @@ import com.pico.spatial.core.math.Vector3
 
 object PlaybackEntityAssembler {
 
+    /**
+     * @return the entity's [VideoMaterial], so the caller can later hot-change its dimension mode
+     * ([VideoMaterial.setDimensionMode]) when the user corrects the stereo format mid-playback -
+     * [VideoPlayerComponent] exposes `setMaterial` but no getter, so the reference has to be kept
+     * on the app side.
+     */
     fun assembleScreenEntity(
         entity: Entity,
         player: CypressMediaPlayer,
         widthMeters: Float,
         heightMeters: Float,
         dimensionMode: VideoDimensionMode,
-    ) {
+    ): VideoMaterial {
         val mesh = MeshResource.createVideoPanel(widthMeters, heightMeters, 0.05f)
         check(mesh.valid) { "createVideoPanel returned an invalid mesh" }
         val material = VideoMaterial(BlendingMode.OPAQUE, dimensionMode, MaterialCullingMode.BACK)
@@ -37,6 +43,7 @@ object PlaybackEntityAssembler {
         entity.components[TransformComponent::class.java]?.apply {
             setPosition(Vector3(0f, 1.5f, -2f))
         }
+        return material
     }
 
     /**
@@ -46,6 +53,7 @@ object PlaybackEntityAssembler {
      * by horizontal sweep - see `MeshGenerator.generateVideoSphere` for how the 180 case reduces
      * to roughly half the vertices/triangles of the 360 case, not a full sphere with half the
      * texture blacked out.
+     * @return the entity's [VideoMaterial], for the same reason as [assembleScreenEntity].
      */
     fun assembleSphereEntity(
         entity: Entity,
@@ -53,7 +61,7 @@ object PlaybackEntityAssembler {
         radiusMeters: Float,
         horizontalFovDegrees: Float,
         dimensionMode: VideoDimensionMode,
-    ) {
+    ): VideoMaterial {
         val mesh = MeshGenerator.generateVideoSphere(
             radius = radiusMeters,
             horizontalFov = horizontalFovDegrees,
@@ -66,6 +74,7 @@ object PlaybackEntityAssembler {
         entity.components.set(VideoPlayerComponent(player, mesh, material))
         // Sphere is centered on the user by design (radiusMeters chosen so the surface surrounds
         // the default spawn point) - world origin is correct here, unlike the flat screen panel.
+        return material
     }
 
     /**
