@@ -38,16 +38,31 @@ fun ImmersiveScene() {
 
     fun returnToMainWindow() {
         viewModel.exitImmersive()
+        // Reopen the main window BEFORE tearing the Stage down, never after. Doing it the other way
+        // round (closeStage() here, openWindowContainer() from onDispose) leaves a window - measured
+        // at ~520ms in thread_debug.txt - during which this app owns NO container at all: the main
+        // window was closed on entry and the Stage is already gone. The system tears the app's
+        // window session down inside that gap ("Failed looking up window session" /
+        // "No window state for package:tech.illusion.spaceplayer" in logcat), and an
+        // openWindowContainer() request that lands after that teardown is silently dropped - the
+        // process stays alive with no window ever coming back, which looks exactly like a crash.
+        // Whether the request or the teardown wins is a race, which is why it only reproduced every
+        // few rounds. StoryPico never hits this: all 11 of its exit sites open the next container
+        // first and close the current one second, and its onDispose does resource cleanup only,
+        // never navigation.
+        navigator.openWindowContainer(MAIN_WINDOW_ID)
         coroutineScope.launch { navigator.closeStage() }
     }
 
     // The main window disappears while the immersive Stage is open (Full space visually occludes
-    // it) - close it explicitly on entry and reopen it once the Stage is torn down, per the SDK's
-    // own documented "expand to immersive" pattern, rather than relying on it reappearing on its
-    // own.
+    // it) - close it explicitly on entry, per the SDK's own documented "expand to immersive"
+    // pattern. Reopening deliberately does NOT happen in onDispose: by the time the composition is
+    // being torn down the Stage is already closed, which is precisely the lost-window race
+    // documented in returnToMainWindow() above. onDispose is kept for cleanup-only concerns, the
+    // same split StoryPico's PlayerSpace uses.
     DisposableEffect(Unit) {
         navigator.closeWindowContainer(MAIN_WINDOW_ID)
-        onDispose { navigator.openWindowContainer(MAIN_WINDOW_ID) }
+        onDispose { }
     }
 
     // Auto-return to the main window once playback reaches the end, same path as the HUD's

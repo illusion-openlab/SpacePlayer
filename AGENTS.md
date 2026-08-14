@@ -960,9 +960,11 @@ tap 音量按钮，图标始终没有切换成静音状态（同时也没有误�
 绕开这个问题，完全不依赖 logcat，验证下来是可靠的——以后需要在真机上做类似的"这段代码到底有没有执行/在哪个
 线程执行"这种确定性诊断时，优先用写文件这个办法，不要指望 `Log.e`/`Log.i` 一定能在 logcat 里看到。
 
-**这轮排查在代码里留下的临时诊断代码还没有清理**（`PlaybackManager.kt`/`PlaybackViewModel.kt`/
-`ImmersiveScene.kt` 里的 `thread_debug.txt` 写入调用），因为问题还没有复现/解决，故意保留着等下一次复现时
-用——不要在这几个文件的 diff 里看到这些"TEMP DEBUG"注释就当成遗留垃圾直接删掉，先确认这个问题是否已经解决。
+**这轮排查在代码里留下的临时诊断代码**（`PlaybackManager.kt`/`PlaybackViewModel.kt`/`ImmersiveScene.kt`
+里的 `thread_debug.txt` 写入调用）**已于 2026-08-14 随根因修复一并清理**——根因见下面"2026-08-14 终于定位
+根因"那一节，问题已由用户实机复测确认解决，这些埋点完成使命。它们采集到的时间戳恰恰是定位根因的决定性证据
+（`onDispose` 比 `closeStage` 晚 524ms 那组数据），需要重新排查同类问题时可以从 git 历史里取回这套写文件
+埋点的写法（不要指望 `Log.e` 一定出现在真机 logcat 里，见上面那条）。
 
 ## 2026-08-10 资源库交互调整：格式修正挪到底部栏，去掉卡片上的播放视觉暗示
 
@@ -1224,3 +1226,206 @@ design-style 硬规则挂上了 `Modifier.spatialHoverEffect()`。**`VideoGridCa
 - **验证方式**：这一层全是整数/浮点算术，JVM 单测（`AspectRatioFormatDetectorTest`/
   `FilenameFormatDetectorTest`/`FormatDetectorTest`）完全覆盖，`assembleDebug`/`testDebugUnitTest` 均
   BUILD SUCCESSFUL，没有涉及 UI/ECS/Spatial SDK，不需要模拟器或真机验证。
+
+## 2026-08-14 续：给 `PlaybackManager` 的原生回调补上主线程代理（对应 08-10 那条未解决排查）
+
+用户反馈真机上播放完毕仍会崩溃，并提示参考同工作区 `StoryPico` 项目的播放逻辑，怀疑跟"代理设置"有关。这正是
+08-10 那条"沉浸模式返回主窗口偶发不弹出"排查记录（见上面对应章节）当时定性为"未解决"的同一个方向，只是这次
+真的复现成了用户描述的"崩溃"，不只是"没弹出来"。
+
+**根因（模式对比得出，不是新反编译）**：08-10 那次排查已经反编译确认过
+`CypressMediaPlayer.registerCypressMediaPlayerCallback()` 只把**注册**这个动作包进
+`runOnScheduleThread`，`onPrepared()`/`onCompleted()` 等回调方法本身完全没有线程切换包装，原生解码线程
+直接调用（`thread_debug.txt` 证实过：`Thread-23`/`Thread-58`，每次 prepare 都是新线程，从来不是 main）。
+对照同工作区 `StoryPico` 的 `VideoPlayableEntity.kt`：它的 `CypressMediaPlayerCallback` 六个回调方法**全部**
+用 `Handler(Looper.getMainLooper())`（成员变量 `mainHandler`）包了一层 `mainHandler.post { ... }`，注释原文
+"CypressMediaPlayer JNI callbacks arrive on a non-main thread; use this handler to dispatch all playListener
+calls and SDK operations back to the main thread"。本项目的 `PlaybackManager.kt` 一直没有这一层——回调里直接
+在原生线程上改 Compose `mutableStateOf`（`state`/`duration`/`hasFirstFrameRendered`）、直接调
+`player.play()`、直接 `invoke()` 外部 lambda（`onFirstFrameRendered`/`onPlaybackCompleted`，后者最终驱动
+`PlaybackViewModel.returnToMainWindowRequested` → `ImmersiveScene` 的 `closeStage()`/`openWindowContainer()`）。
+08-10 那次单轮测试运气好、Compose 状态碰巧在 18ms 内正确传播到了主线程的 `LaunchedEffect`，但这从来不是
+可以依赖的保证——`mutableStateOf` 的跨线程写入和后续 SDK 调用链条本身不是线程安全契约的一部分，间歇性
+（"连续切换若干轮才出问题"）正好符合竞态的特征，跟这次真机复现成真崩溃是同一个根因的两种表现形式。
+
+**修复**：`PlaybackManager.kt` 新增 `mainHandler = Handler(Looper.getMainLooper())`，`callback` 对象六个
+覆写方法（`onPrepared`/`onStarted`/`onCompleted`/`onPaused`/`onVideoSizeChanged`/`onError`）的方法体全部
+包进 `mainHandler.post { ... }`，跟 `StoryPico` 的 `VideoPlayableEntity` 逐字段对齐（`onSeekToCompleted`/
+`onStopped` 两个空实现本来就没有需要保护的状态，原样保留空实现）。原来 `onCompleted()` 里那行专门为了
+08-10 排查加的 `thread_debug.txt` 诊断写入（用来证明"原生回调在非主线程触发"）已经删掉——这一点在 08-10
+已经证实过，继续保留只会在修复后显示"总是 main"，没有新增诊断价值；`PlaybackViewModel.kt`/`ImmersiveScene.kt`
+里剩下的几处 `thread_debug.txt` 埋点**没有删**（追踪的是修复后应该变化的下游链路：`onPlaybackCompleted-lambda`
+这一行修复前是 `Thread-23`/`Thread-58`，修复后应该变成 `main=true`），留着做这次修复的验证证据，等真机
+回归确认后再统一清理，不要看到"TEMP DEBUG"注释就当遗留垃圾删掉。
+
+**验证状态（如实记录，未完全闭环）**：
+- `./gradlew :app:assembleDebug :app:testDebugUnitTest` BUILD SUCCESSFUL（`JAVA_HOME` 指到 Android Studio
+  自带 JBR，见"本机环境注意事项"）。
+- 已装上真机（这次会话连接的是 `PB3B4XJGL2090011G`，型号同样是 B3110，API 36——跟 AGENTS.md 之前记录的
+  `D3HDXD2D4363000138` 不是同一台设备，但同型号同样兼容 `compileSdk/targetSdk=35`）、启动，`adb`
+  确认进程存活、`pico-cli app logcat` 里没有 `FATAL`/涉及 `tech.illusion.spaceplayer` 的异常。
+- **没有验证到的部分**：没能验证"播放到自然结束→自动返回主窗口"这条真正触发过原 bug 的路径本身——设备
+  没人佩戴时屏幕会休眠（`lid_switch` 机制）、且沉浸态下 `adb shell input tap` 对 spatial 容器不可靠（两条
+  都是 AGENTS.md 前面已经记过的真机限制），没法靠 adb 单独跑通"打开资源库→选视频→进沉浸→等播放完"这条
+  完整流程。原 bug 本身是**间歇性**的（08-10 记录是连续四轮才复现一次），所以即使真机上手动测一轮成功，
+  也不能就此断言"修复了"——需要用户实际戴上设备，**连续播放多个视频到自然结束、重复几轮**（复现原 bug
+  用的同一条件），再把 `thread_debug.txt`（`pico-cli files pull` 或 `adb pull`）和
+  `pico-cli app logcat --level E` 一起拉出来，确认：①全程无 `FATAL EXCEPTION`；②`onPlaybackCompleted-lambda`
+  这一行变成 `main=true`。这一步还没有做，不能声称问题已经解决。
+
+**用户反馈"还是崩溃"，这个修复不是真正的根因——用 `dumpsys dropbox --print` 抓到了真实证据，纠正**：装上上面
+这版修复、用户实机测试后反馈"还是遇到了崩溃"。这次没有再靠猜测或者复用旧结论，直接拉了真机的
+`dumpsys dropbox --print`：全程没有一次 `FATAL EXCEPTION`（Compose 回调的主线程代理修复本身没有问题，
+`CypressMediaPlayer` 回调链路那部分推理是对的，只是**不是用户这次遇到的这个崩溃**），但抓到一条完整的 ANR
+记录，`Subject: Input dispatching timed out ... Waited 5000ms for MotionEvent`，native 栈完整、可读：
+
+```
+tech.illusion.spaceplayer.ui.library.MainLibraryScreenKt$MainLibraryScreen$3...（"开始播放"点击回调）
+  → tech.illusion.spaceplayer.ui.PlaybackViewModel.startPlayback
+  → com.pico.spatial.tracking.hmd.HMDTrackingProvider.start
+  → com.pico.spatial.tracking.BaseTrackingDataProvider.start
+  → com.pico.spatial.tracking.TrackingDataSourceAdapter.addDataCallback
+  → Java_..._HMDTrackingDataSource_nativeStartHMDTrackingDataSource（JNI）
+  → spatial::jobs::JobWaiter::wait（原生层同步阻塞等待）
+```
+
+**真正的根因**：`startPlayback()` 里 `HMDTrackingProvider().also { it.start() }` 是在主线程（点击回调）
+同步调用的，而 `start()` 内部（反编译 `tracking-0.13.3-sources.jar` 确认，
+`BaseTrackingDataProvider.start()` 直接调 `dataSource.addDataCallback(callback)`，没有任何线程切换）会
+一直阻塞到原生 `JobWaiter::wait` 返回——这条阻塞可以长达 5 秒以上，超过 Android 的输入分发超时阈值，
+触发 ANR（用户感受到的"崩溃"，其实是系统弹出"应用未响应"或者直接被 Watchdog 杀掉）。这条 native 栈其实
+**已经在 `PlaybackViewModel.kt` 的代码注释里被记录过**（"08-13...确认过...ANR...main thread blocked for
+5+ seconds inside the native tracking-start call"）——但当时的应对是"改成每个播放会话用一个全新的
+`HMDTrackingProvider` 实例，不跨会话复用"，这个修法处理的是"重复 start/stop 累积状态"这个猜测，没有处理
+"`start()` 本身就是一次可能长达数秒的同步阻塞调用，不管实例是不是全新的，只要在主线程调用就有 ANR 风险"这个
+更直接的根因——这次真机复测证明前一次的修法没有真正解决问题，是同一个 native 阻塞点、同一条调用栈，只是
+换了个"看起来合理"的解释。
+
+**教训**：这次一开始被用户提到"代理"就直接联想到 `CypressMediaPlayer` 回调线程（因为这正是 08-10 那条排查
+记录唯一提到"代理"/线程的地方），套用了 StoryPico 的 `mainHandler.post` 模式——这个修复本身没有错（也确实是
+一个真实存在、值得修的线程安全问题），但**在没有拿到这次崩溃的真实证据之前就基于旧排查记录的相似性下结论，
+是模式匹配代替了证据**。用户第二次反馈"还是崩溃"后才去拉 `dumpsys dropbox --print`，如果一开始就先做这一步，
+可以直接跳过第一次误判。**以后遇到"崩溃"类反馈，即使已经有一份看起来高度相关的历史排查记录，也应该先拉一次
+新鲜的崩溃证据（`dumpsys dropbox --print` / `logcat -b crash` / `pico-cli app watch-crash`）确认这次的崩溃
+签名和历史记录是不是真的同一个，而不是直接套用旧结论。**
+
+**修复**：`PlaybackViewModel.kt` 新增 `backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)`，
+`startPlayback()` 里改成先把 `HMDTrackingProvider()` 实例立即赋给 `hmdTrackingProvider` 字段（`ImmersiveScene`
+每帧读取这个字段本来就是 null-safe 的 `?.`，赋值本身在主线程，不涉及跨线程可见性问题），再用
+`backgroundScope.launch { provider.start() }` 把真正阻塞的 `start()` 调用甩到后台线程——点击回调本身立刻返回，
+不再占用主线程等待原生调用。反编译确认过 `BaseTrackingDataProvider`/`HMDTrackingProvider` 源码和 SDK 文档
+（`pico-dev-knowledge`：`spatial-sdk_tracking_hmd-tracking.md`/`use-dataprovider.md`）都没有"必须在主线程调用
+`start()`"这类约束或 `@MainThread` 标注，官方示例代码在 `DisposableEffect` 里调用只是常见写法，不是硬性要求，
+所以挪到后台线程是有根据的最小改动，不是猜的。`onCleared()` 里补了 `backgroundScope.cancel()` 避免协程泄漏。
+`exitImmersive()` 里的 `hmdTrackingProvider?.stop()` 暂时没动——目前只有 `start()` 被证实会阻塞，`stop()`
+只是 `removeDataCallback`，没有证据支持它也会阻塞，不在没有证据的情况下顺手"预防性"改动。
+
+**验证状态（如实记录）**：`assembleDebug`/`testDebugUnitTest` BUILD SUCCESSFUL；已重新装到真机
+（`PB3B4XJGL2090011G`）、启动、进程存活。**同样没有能验证到真正触发过 ANR 的那条路径本身**——点击"开始播放"
+需要真人戴设备操作（`adb tap` 对这套 spatial 容器不可靠），还没有请用户重新测过这一版。上一版 `mainHandler`
+那个修复保留不变（它解决的是一个真实但不同的问题），这次的 `HMDTrackingProvider` 异步化改动是叠加上去的
+第二个独立修复，两者都需要用户下一轮实机测试后用 `dumpsys dropbox --print` 确认这次点击"开始播放"（尤其是
+"自动返回主窗口→立刻点下一个视频"这个高频触发场景）不再触发 ANR。
+
+## 2026-08-14 终于定位根因：`openWindowContainer`/`closeStage` 的调用顺序反了（对比 StoryPico 得出）
+
+用户第三次反馈"还是崩溃"，并提出了一个正确的问题："为什么 Pico Story 的播放逻辑不会造成这个问题，但当前的
+会？"——这个问题直接指向了根因。
+
+### 先拉证据：这压根不是"崩溃"
+
+按上一节记下的教训，先拉新鲜证据而不是接着猜：`dumpsys dropbox --print` 里**没有新的 ANR**（上一版
+`HMDTrackingProvider` 异步化修复确实生效了，最新一条 ANR 还是修复前那次），`/data/tombstones/` 最近的
+tombstone 是 6 月的（没有原生崩溃），`logcat -b crash` 完全是空的，进程 PID 一直存活。**三种崩溃形态
+（Java 异常 / ANR / native crash）一个都没有。** 这和 08-10 那条排查记录第一句"不是崩溃：进程全程同一个
+PID"完全吻合——用户看到的"崩溃"，真实症状是**播放结束后主窗口再也没有回来**（眼前一片空/卡住），观感等同
+于崩溃，但进程其实好好活着。前面两轮之所以修错方向，一部分原因就是把"崩溃"这个词照字面理解成了进程死亡。
+
+### 根因：容器交接顺序反了，中间出现"零窗口真空期"
+
+对比两个项目的退出路径，差异是结构性的、而且极其一致。**StoryPico 全项目 11 处退出沉浸的地方
+（`PlayerSpace`/`OobeSpace`/`WorldAnchorSpace`/`EditorView`/`Main.kt` ×4 等），无一例外全是同一个顺序**：
+
+```kotlin
+spatialNavigator.openWindowContainer(id = WINDOW_CONTAINER_HOME_ID)   // 先开下一个容器
+closeStage()                                                          // 再关当前容器
+```
+
+而且 `PlayerSpace` 的 `DisposableEffect.onDispose` 里**只有资源清理**（`palmGlow.release()`/
+`sceneManager.exitStory()`/`stopTracking()`/`stopControllerInput()`/`assetBundle.close()`），**一行导航
+都没有**。
+
+SpacePlayer 的 `ImmersiveScene.kt` 恰好是**反过来的**：`returnToMainWindow()` 里先 `closeStage()`，
+主窗口的 `openWindowContainer(MAIN_WINDOW_ID)` 放在 `DisposableEffect` 的 `onDispose` 里——也就是等
+Stage 已经关掉、整个组合正在销毁的时候才执行。项目自己的 `thread_debug.txt` 把这个时间差记录得清清楚楚：
+
+```
+before-closeStage                      t=1786587801552
+after-closeStage                       t=1786587801557
+onDispose-before-openWindowContainer   t=1786587802081   ← 比 closeStage 晚了 524ms
+onDispose-after-openWindowContainer    t=1786587802090
+```
+
+**这 524 毫秒里，这个 App 名下一个容器都没有**：主窗口在进入沉浸时就被 `closeWindowContainer` 关掉了，
+Stage 也已经关了。系统会在这个真空期里把 App 的 window session 整个拆掉——这正是 08-10 那次抓到、当时
+判断为"更底层、改不了"的那三行系统日志的真正含义：
+
+```
+Failed looking up window session=Session{...}
+setOnBackInvokedCallback(): No window state for package:tech.illusion.spaceplayer
+SpatialAudioHelper: can not get attached window
+```
+
+session 拆完之后再到达的 `openWindowContainer()` 请求会被静默丢弃（不抛异常、不崩溃），于是主窗口永远
+回不来。**"请求先到"还是"拆除先完成"是一场竞态**——这就完美解释了为什么它是间歇性的、为什么 08-10 记录
+里"连续三轮都正常、第四轮才卡住"，也解释了为什么前两轮修复（`mainHandler` 代理、`HMDTrackingProvider`
+异步化）都没用：**那两处都没碰容器交接顺序**。
+
+StoryPico 从来碰不到这个问题，不是因为它的播放器逻辑更好，而是因为它的容器交接**始终有重叠**：新容器先
+建立起来，旧容器才拆——App 名下任何时刻都至少有一个活着的容器，window session 根本没有机会被拆掉。
+
+顺带一提，StoryPico 源码里还有两条注释直接印证了这套顺序是他们踩过坑之后固化下来的约定：
+`OobeSpace.kt` 里"Avoid openWindowContainer(HOME) here — calling it together with PlayerSpace's own
+openWindowContainer(HOME) on exit causes duplicate Home windows to stack"，以及 `HomeScreen.kt` 里那段
+"绝不能再触发 openWindowContainer(HOME)——Pico SDK 会叠出第二个 Home 容器"。**所以"开"和"关"必须严格
+配对成一处，不能两边都写**，这也是为什么这次修复必须把 `onDispose` 里那次调用删掉而不是两处都留。
+
+### 修复
+
+`ImmersiveScene.kt`：把 `navigator.openWindowContainer(MAIN_WINDOW_ID)` 从 `onDispose` 移到
+`returnToMainWindow()` 里、`closeStage()` **之前**（Stage 还活着的时候同步调用；`openWindowContainer`
+是同步方法，`closeStage()` 才是 suspend，所以前者直接调、后者仍在 `coroutineScope.launch` 里）。
+`DisposableEffect` 保留进入时的 `closeWindowContainer(MAIN_WINDOW_ID)`，`onDispose` 留空并注释说明
+为什么这里**不能**再开窗口（否则就是上面那条重复容器的坑）。改动只有这一处，没有动播放器、ECS、HUD
+任何逻辑。
+
+**一个已知的取舍**：如果 Stage 是被系统而不是被 `returnToMainWindow()` 关掉的（比如用户摘下头显、按 home
+键），现在就没有兜底重开主窗口的地方了。这个取舍和 StoryPico 完全一致（它 11 处退出也都只在主动路径上开
+容器），而且 `onDispose` 里那个"兜底"恰恰就是 bug 本身，不是可以两者兼得的东西。
+
+### 验证状态
+
+`assembleDebug`/`testDebugUnitTest` BUILD SUCCESSFUL，装到真机（`PB3B4XJGL2090011G`）后**由用户实机复测
+确认："当前的修改有效，没有造成崩溃了"**——这是这个 bug 从 08-10 第一次记录以来第一次拿到"修好了"的
+确认。之前两轮修复（`mainHandler` 主线程代理、`HMDTrackingProvider` 异步化）在真机上都仍会复现，只有这次
+的容器交接顺序修复真正解决了问题，反过来印证了根因判断是对的。
+
+确认解决后，排查期间的 `thread_debug.txt` 临时埋点已从 `PlaybackManager.kt`/`PlaybackViewModel.kt`/
+`ImmersiveScene.kt` 全部清理干净（`assembleDebug`/`testDebugUnitTest` 复测仍 BUILD SUCCESSFUL），代码里
+只保留注释形式的证据说明。
+
+**前两轮修复的处置**：都保留。`PlaybackManager` 的 `mainHandler` 主线程代理和 `HMDTrackingProvider` 的
+异步化各自解决的是真实存在的问题（前者是跨线程写 Compose 状态，后者有 `dumpsys dropbox` 里实打实的 ANR
+栈为证），只是都不是用户反馈的这个症状的根因。三处改动互不冲突。
+
+### 这次真正该记住的教训
+
+1. **"崩溃"是用户的观感描述，不是技术结论。** 先用 `dumpsys dropbox --print` + `/data/tombstones/` +
+   `logcat -b crash` 三件套确认到底是 Java 异常、ANR、native crash 还是"进程活着但界面没了"，这四种的
+   根因和排查路径完全不同。这次前两轮都是在没做这个区分的情况下就开始修。
+2. **用户说"参考某个项目"时，要对比的是架构和调用顺序，不只是相似的代码片段。** 第一轮我在 StoryPico 里
+   搜到 `mainHandler.post` 就停下了——那确实是个真实差异，但不是这个症状的差异。真正的差异需要把两边
+   **同一条用户路径**（退出沉浸→回主窗口）完整拉平了逐行对比才能看见。搜关键字容易命中"相似的东西"，
+   拉平对比才能命中"不同的东西"。
+3. **`onDispose` 只做资源清理，不做导航。** 组合销毁时目标容器往往已经不在了，此时发出的容器操作是在对
+   一个正在拆除的 session 说话。容器交接必须在旧容器还活着时完成，保证任何时刻 App 名下至少有一个活容器。

@@ -3,6 +3,8 @@ package tech.illusion.spaceplayer.playback
 import android.content.Context
 import android.content.res.AssetFileDescriptor
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,33 +32,53 @@ class PlaybackManager(private val context: Context) {
     var onFirstFrameRendered: (() -> Unit)? = null
     var onPlaybackCompleted: (() -> Unit)? = null
 
+    // CypressMediaPlayer's native callbacks arrive on the decoder's own JNI thread (confirmed via
+    // thread_debug.txt: a new Thread-N per prepare cycle, never main) - registerCypressMediaPlayerCallback()
+    // only wraps the *registration* call in runOnScheduleThread, not the callback dispatch itself.
+    // Mutating Compose state (and, downstream, driving SDK/window-container calls off
+    // returnToMainWindowRequested) straight from that thread is exactly the pattern StoryPico's
+    // VideoPlayableEntity avoids via its own mainHandler.post{} proxy - mirrored here for the same reason.
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     private val callback = object : CypressMediaPlayerCallback {
         override fun onPrepared() {
-            state = PlaybackState.READY
-            duration = player.getDuration()
-            player.play()
-            state = PlaybackState.PLAYING
+            mainHandler.post {
+                state = PlaybackState.READY
+                duration = player.getDuration()
+                player.play()
+                state = PlaybackState.PLAYING
+            }
         }
         override fun onStarted() {
-            state = PlaybackState.PLAYING
+            mainHandler.post {
+                state = PlaybackState.PLAYING
+            }
         }
         override fun onCompleted() {
-            onPlaybackCompleted?.invoke()
+            mainHandler.post {
+                onPlaybackCompleted?.invoke()
+            }
         }
         override fun onSeekToCompleted() {}
         override fun onPaused() {
-            state = PlaybackState.PAUSED
+            mainHandler.post {
+                state = PlaybackState.PAUSED
+            }
         }
         override fun onStopped() {}
         override fun onVideoSizeChanged(width: Int, height: Int) {
-            if (!hasFirstFrameRendered) {
-                hasFirstFrameRendered = true
-                onFirstFrameRendered?.invoke()
+            mainHandler.post {
+                if (!hasFirstFrameRendered) {
+                    hasFirstFrameRendered = true
+                    onFirstFrameRendered?.invoke()
+                }
             }
         }
         override fun onError(error: CypressMediaPlayerErrorCode) {
-            Log.e(TAG, "onError code ${error.code}")
-            state = PlaybackState.ERROR
+            mainHandler.post {
+                Log.e(TAG, "onError code ${error.code}")
+                state = PlaybackState.ERROR
+            }
         }
     }
 

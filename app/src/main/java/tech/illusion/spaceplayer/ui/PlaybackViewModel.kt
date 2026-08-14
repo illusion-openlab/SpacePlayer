@@ -11,6 +11,11 @@ import com.pico.spatial.core.ecs.resource.VideoMaterial
 import com.pico.spatial.core.ecs.video.VideoDimensionMode
 import com.pico.spatial.core.math.Vector3
 import com.pico.spatial.tracking.hmd.HMDTrackingProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import tech.illusion.spaceplayer.ecs.PlaybackEntityAssembler
 import tech.illusion.spaceplayer.library.FormatSource
 import tech.illusion.spaceplayer.library.PlaybackHistoryStore
@@ -54,6 +59,16 @@ class PlaybackViewModel(
     // spatial::jobs::JobWaiter::wait beneath HMDTrackingDataSource.nativeStartHMDTrackingDataSource).
     var hmdTrackingProvider: HMDTrackingProvider? = null
         private set
+
+    // HMDTrackingProvider.start() is a synchronous native call (blocks on the SDK's own
+    // spatial::jobs::JobWaiter::wait) - confirmed via a real ANR (`dumpsys dropbox --print`,
+    // "Input dispatching timed out ... Waited 5000ms", stack ending in
+    // PlaybackViewModel.startPlayback -> HMDTrackingProvider.start -> nativeStartHMDTrackingDataSource)
+    // when it was called directly from the "开始播放" click handler on the main thread. Neither the
+    // SDK docs nor the decompiled 0.13.3 source (BaseTrackingDataProvider.start()) declare a
+    // main-thread requirement, so dispatching the call itself to a background thread is safe and
+    // keeps the click handler from blocking input dispatch long enough to trip the ANR watchdog.
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private var subtitleCues: List<SubtitleCue> = emptyList()
 
@@ -236,7 +251,12 @@ class PlaybackViewModel(
         currentItem = item
         subtitleCues = loadSubtitleCues(item.subtitleUri)
         returnToMainWindowRequested = false
-        hmdTrackingProvider = HMDTrackingProvider().also { it.start() }
+        // Assign the provider immediately (ImmersiveScene's per-frame loop reads it null-safely and
+        // just sees a default zero pose until start() actually finishes) - only the blocking start()
+        // call itself is pushed off the main thread, so the click handler returns right away.
+        val provider = HMDTrackingProvider()
+        hmdTrackingProvider = provider
+        backgroundScope.launch { provider.start() }
         currentStereoMode.value = item.stereoMode
         if (item.projection == Projection.FLAT) {
             // Applied before applyProjection so the screen lands on the right anchor straight away.
@@ -308,5 +328,6 @@ class PlaybackViewModel(
         manager.reset()
         hmdTrackingProvider?.stop()
         hmdTrackingProvider = null
+        backgroundScope.cancel()
     }
 }
