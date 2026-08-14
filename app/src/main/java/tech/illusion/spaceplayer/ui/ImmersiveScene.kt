@@ -12,6 +12,7 @@ import androidx.compose.runtime.withFrameNanos
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.math.EulerAngles
 import com.pico.spatial.core.math.Vector3
+import com.pico.spatial.tracking.hand.HandJoint
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.foundation.content.SpatialView
 import com.pico.spatial.ui.foundation.content.SpatialViewAttachments
@@ -22,6 +23,7 @@ import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
 import tech.illusion.spaceplayer.MAIN_WINDOW_ID
 import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
+import tech.illusion.spaceplayer.ecs.PinchDetector
 import tech.illusion.spaceplayer.ecs.SubtitleFollowComponent
 import tech.illusion.spaceplayer.ecs.applySubtitleFollow
 
@@ -37,6 +39,9 @@ fun ImmersiveScene() {
     val coroutineScope = rememberCoroutineScope()
     val subtitleFollow = remember { SubtitleFollowComponent() }
     var spatialAttachments by remember { mutableStateOf<SpatialViewAttachments?>(null) }
+    // Plain Compose state, not an ECS Component - same reasoning as subtitleFollow above: the
+    // native ECS layer silently rejects custom Component subtypes.
+    var wasPinching by remember { mutableStateOf(false) }
 
     fun returnToMainWindow() {
         viewModel.exitImmersive()
@@ -101,6 +106,38 @@ fun ImmersiveScene() {
                 lastFrameNs = nowNs
 
                 viewModel.refreshPlaybackFrame()
+
+                // Right-hand fingertip markers + pinch detection. Runs before the `attachments`
+                // null-check below because it only touches viewModel.thumbTipEntity/indexTipEntity
+                // (added directly to `content`, not attachment panels) and viewModel state - none of
+                // it needs `attachments` to be non-null.
+                val handPose = viewModel.handTrackingProvider?.latestData?.right
+                if (handPose != null) {
+                    val thumbTip = handPose.joint(HandJoint.Index.THUMB_TIP)
+                    val indexTip = handPose.joint(HandJoint.Index.INDEX_TIP)
+                    viewModel.thumbTipEntity.components[TransformComponent::class.java]
+                        ?.setPosition(thumbTip.position)
+                    viewModel.indexTipEntity.components[TransformComponent::class.java]
+                        ?.setPosition(indexTip.position)
+                    viewModel.thumbTipEntity.enabled = true
+                    viewModel.indexTipEntity.enabled = true
+
+                    val distance = Vector3.distance(thumbTip.position, indexTip.position)
+                    val pinch = PinchDetector.update(distance, wasPinching)
+                    wasPinching = pinch.isPinching
+                    if (pinch.justEngaged) {
+                        viewModel.toggleHudVisibility()
+                    }
+                } else {
+                    // Right hand not currently tracked (out of frame, tracking lost, or
+                    // HandTrackingProvider.start() hasn't completed on the background thread yet) -
+                    // hide the markers rather than leaving them at a stale position, and reset
+                    // wasPinching so a stale pinch state can't produce a spurious rising edge the
+                    // instant tracking resumes.
+                    viewModel.thumbTipEntity.enabled = false
+                    viewModel.indexTipEntity.enabled = false
+                    wasPinching = false
+                }
 
                 val attachments = spatialAttachments ?: return@withFrameNanos
                 val subtitleEntity = attachments.entity(SUBTITLE_ATTACHMENT_ID)
