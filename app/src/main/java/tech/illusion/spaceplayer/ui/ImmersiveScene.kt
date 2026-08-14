@@ -249,24 +249,27 @@ fun ImmersiveScene() {
                         // foundation-0.13.3-sources.jar's EulerAngles.toQuat(), which does its own
                         // `* (PI / 180.0)` conversion internally).
                         //
-                        // Sign IS derivable without a headset, from the SDK's own documented
-                        // conventions: Matrix4.kt documents rotation about the X-axis as following the
-                        // right-hand rule in a right-handed coordinate system, and EulerAngles.toQuat()
-                        // builds the pitch component as Quat(sin(th/2), 0, 0, cos(th/2)) - the standard
-                        // right-hand-rule rotation about +X. TransformComponent.eulerAngles's setter
-                        // applies this directly as local rotation, and this HUD entity has no parent,
-                        // so local space = world space here. This project's own precedent
-                        // (ecs/SubtitleFollowComponent.kt, relativePosition = Vector3(0, -0.3, -1.0))
-                        // establishes that "in front of the user" is negative Z, and this panel sits at
-                        // (0, 0.9, -1.5) with the user near the origin, so its front-facing normal is
-                        // local +Z at identity rotation. Under the right-hand rule about +X, a positive
-                        // pitch rotates the +Z normal toward -Y (downward) - front-tilting-down, the
-                        // opposite of "tilted back to face the user's downward gaze". pitch = -22f
-                        // produces a normal of (0, +0.375, +0.927) - pointing up and toward the user -
-                        // which is the intended direction. On-device visual confirmation is still the
-                        // final check: if this still reads backwards on device, the derivation above
-                        // should be re-examined.
-                        setEulerAngles(EulerAngles(pitch = -22f, yaw = 0f, roll = 0f))
+                        // The SIGN of pitch was guessed wrong twice in a row from pure math/SDK-doc
+                        // derivation (+22f, then -22f "derived" via the right-hand rule + this
+                        // project's -Z-forward precedent in SubtitleFollowComponent.kt) - both were
+                        // declared correct before ever being installed on a real headset, and both
+                        // read backwards once actually tested (-22f made the top edge lean forward
+                        // toward the user instead of receding back). The SDK's native rendering path
+                        // for an AttachmentPanel's content quad (android.view.ViewLink/ViewAttachment)
+                        // has no available source, so which local axis this specific quad type treats
+                        // as "front" could not be confirmed from the SDK - the generic LookAtComponent
+                        // doc's "+Z is front" convention does not necessarily carry over to this
+                        // component. pitch = +22f below is set from direct on-device observation
+                        // (confirmed backwards at -22f, flipped), not re-derived from math.
+                        //
+                        // Do not re-derive this sign from math a third time if it's still wrong -
+                        // that method has now failed twice. If +22f is also wrong, describe exactly
+                        // what's wrong (leaning the wrong way vs. not facing the user at all/mirrored)
+                        // and consider replacing this static angle with the SDK's own
+                        // LookAtComponent targeting the live HMD position (see StoryPico's
+                        // PlayerSpace.kt lookAtQuat() for a working precedent) - that self-corrects
+                        // for whichever axis the SDK actually treats as front instead of guessing.
+                        setEulerAngles(EulerAngles(pitch = 22f, yaw = 0f, roll = 0f))
                     }
                     content.addEntity(this)
                 }
