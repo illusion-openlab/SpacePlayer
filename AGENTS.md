@@ -1429,3 +1429,59 @@ openWindowContainer(HOME) on exit causes duplicate Home windows to stack"，以�
    拉平对比才能命中"不同的东西"。
 3. **`onDispose` 只做资源清理，不做导航。** 组合销毁时目标容器往往已经不在了，此时发出的容器操作是在对
    一个正在拆除的 session 说话。容器交接必须在旧容器还活着时完成，保证任何时刻 App 名下至少有一个活容器。
+
+## 2026-08-14 续：主窗口侧边栏调整 + 沉浸 HUD 手部交互（7 项需求，Subagent-Driven Development 执行）
+
+设计稿见 `docs/superpowers/specs/2026-08-14-library-ux-and-hand-interaction-design.md`，实施计划见
+`docs/superpowers/plans/2026-08-14-library-ux-and-hand-interaction.md`（9 个任务）。按
+`subagent-driven-development` 流程执行：每个任务派独立 subagent 实现、独立 subagent 审查，全部 9 个任务
+审查通过，过程记录在 `.superpowers/sdd/2026-08-14-library-ux-and-hand-interaction/progress.md`（这个目录是
+scratch 工作区，最终会在收尾时删除，git 历史才是权威记录）。
+
+**改动内容**：
+
+1. 侧边栏 `SideNavigationItem` 高度从 SDK 默认约 48dp 加到 `NAV_ITEM_HEIGHT = 64.dp`。
+2. 侧边栏渲染列表隐藏"历史"分类（枚举值和数据仍保留，播放历史仍照常记录，恢复入口只需改回一行 filter）。
+3. 新增极小的 Koin 单例 `LibrarySessionState`（只有一个字段 `selectedCategory`），让侧边栏选中分类跨"进入
+   沉浸播放→主窗口容器销毁重建→退出"这条边界存活——根因是 `LibraryViewModel` 是纯 `remember`，容器重建
+   就重置；只搬这一个字段，其它状态（`selectedItem`/格式筛选等）有意不搬，保持改动面最小。
+4. 沉浸 HUD 面板加 `setEulerAngles(EulerAngles(pitch = 22f, yaw = 0f, roll = 0f))` 向后仰。**关键事实**：
+   反编译 `foundation-0.13.3-sources.jar` 确认 `EulerAngles` 三个字段单位是**度数**不是弧度（写计划时发现
+   设计稿草稿阶段的假设是错的，已改正）。`pitch` 符号方向没有 SDK 文档依据，代码里留了运行时验证的注释和
+   `-22f` 的 fallback。
+5. HUD 首次显示后、首帧渲染完成起算 5 秒自动隐藏一次（不是从点击播放起算，避免被 loading 遮罩吃掉倒计时）；
+   `.enabled` 从 `SpatialView.update`（不是每帧循环）搬到已有的每帧 `withFrameNanos` 循环，确保这个属性
+   只有一个写入点。
+6. 右手拇指尖/食指尖各绑一个 8mm 纯色小球（`MeshResource.createSphere` + `UnlitMaterial`），跟踪不到时隐藏
+   而不是停在世界原点。`HandTrackingProvider` 生命周期完全照抄项目里已验证过的 `HMDTrackingProvider` 模式
+   ——每个播放会话新建实例、`start()` 走 `backgroundScope.launch`（阻塞原生调用，8/14 当天的真机 ANR
+   就是直接在主线程调用同一条代码路径触发的，这次没有重蹈）、`exitImmersive()`/`onCleared()` 都停止置空。
+7. 捏合手势切换 HUD 显隐：新增 `PinchDetector`（纯函数，25mm 内判定捏合、40mm 外判定松开，中间维持上一帧
+   状态，只在"非捏合→捏合"的上升沿触发一次），单元测试 10/10 通过（含两个阈值边界的严格大小判断）。
+
+**验证状态（如实分层记录，不笼统写"已确认"）**：
+
+- **可自证、已验证**：`./gradlew clean assembleDebug testDebugUnitTest` BUILD SUCCESSFUL，72/72 单测通过
+  （0 failure 0 error）。9 个任务的 code review 全部 approved，2 处安全关键点（`HandTrackingProvider.start()`
+  确实包在 `backgroundScope.launch` 里、`exitImmersive()`/`onCleared()` 都正确 stop+置空）逐行核对过 diff
+  文本，不是听 implementer 自报。装到模拟器和真机（`PB3B4XJGL2090011G`）两边，进程存活，`logcat`/crash
+  buffer/`dumpsys dropbox --print` 全干净，没有引入新的 FATAL/ANR。侧边栏高度+隐藏历史两项通过模拟器截图
+  确认（`artifacts/task1-2-verify.png`）。
+- **没有验证到、需要用户戴设备确认的部分**（如实列出，这次没有一项是"应该没问题就跳过"）：
+  1. HUD 倾斜方向（`pitch = 22f` 是否是想要的"后仰"方向，不是"前俯"）。
+  2. 5 秒自动隐藏的真实挂钟时间是否符合预期（自动化验证被设备端 `screencap`/焦点抢占问题挡住，退而用了
+     代码层论证：`hasFirstFrameRendered` 一个会话内只会 false→true 一次，`delay(5000)` 从这个时刻起算，
+     这个论证经 reviewer 独立核对过是成立的，但真实挂钟时间没有实测过）。
+  3. 侧边栏选中分类跨沉浸播放往返是否真的保持（`adb tap` 打不进沉浸态的 spatial 容器，这条链路的代码
+     被逐行核对过是对的，但端到端没有真机走过一遍）。
+  4. 右手拇指/食指小球是否真的跟手、位置对不对。
+  5. 捏合手势能否稳定触发 HUD 显隐、滞回区间（25-40mm）是否真的消除了抖动。
+  6. `HandTrackingProvider().start()` 真正触发的那一刻（进入沉浸播放、开始播放视频）有没有 ANR——这是
+     全部改动里唯一一个"和已知真实事故同一条代码路径"的风险点，代码层面的两处安全关键写法都核对过，但
+     没能在这次会话里让它真正跑一次（需要戴设备点开一个视频才会触发）。
+
+  以上 6 项没有一项是能靠 `adb`/模拟器自动化跑通的——全部需要用户实际戴上设备、用真手在真实沉浸播放里试。
+  下一步：戴上设备，连续播放几个视频，进沉浸后等 HUD 自动隐藏、试着捏合几次看是否稳定切换、留意小球是否
+  跟手，任何一项不对都可以直接反馈，代码层面的证据（diff 逐行核对记录）已经存在
+  `.superpowers/sdd/2026-08-14-library-ux-and-hand-interaction/progress.md`，方便回溯是哪个任务、哪次
+  review 的判断。
