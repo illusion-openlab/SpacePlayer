@@ -153,6 +153,10 @@ fun ImmersiveScene() {
                 content.addEntity(viewModel.cinemaEnvironmentEntity)
                 content.addEntity(viewModel.starrySkyEnvironmentEntity)
                 content.addEntity(viewModel.seasideEnvironmentEntity)
+                // No parent, positioned fresh every frame from live hand-tracking data (Task 8) -
+                // same reasoning as the HUD/loading panel not being parented to a video entity.
+                content.addEntity(viewModel.thumbTipEntity)
+                content.addEntity(viewModel.indexTipEntity)
 
                 // Independent of screenEntity/sphereEntity/hemisphereEntity on purpose: only one
                 // of the three is `enabled` at a time (children of a disabled entity are hidden

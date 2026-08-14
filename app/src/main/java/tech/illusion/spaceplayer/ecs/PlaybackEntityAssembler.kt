@@ -13,7 +13,13 @@ import com.pico.spatial.core.ecs.resource.UnlitMaterial
 import com.pico.spatial.core.ecs.resource.VideoMaterial
 import com.pico.spatial.core.ecs.video.CypressMediaPlayer
 import com.pico.spatial.core.ecs.video.VideoDimensionMode
+import com.pico.spatial.core.math.Color4
 import com.pico.spatial.core.math.Vector3
+
+// Matches SpacePlayerAccent (#E63946, see ui/library/SpacePlayerPalette.kt) - written as a plain
+// Color4 literal rather than importing that Compose Color into this ECS-only file. Color4's
+// components are 0..1 floats: 0xE6/255, 0x39/255, 0x46/255.
+private val HAND_MARKER_COLOR = Color4(0.902f, 0.224f, 0.275f, 1f)
 
 object PlaybackEntityAssembler {
 
@@ -96,6 +102,21 @@ object PlaybackEntityAssembler {
         val material = UnlitMaterial.create().apply {
             setBaseColorTexture(texture)
             setCullingMode(MaterialCullingMode.BACK)
+        }
+        entity.components.set(ModelComponent(mesh, material))
+    }
+
+    /**
+     * A small solid-color sphere used as a visual marker for a tracked fingertip position (see
+     * PlaybackViewModel.thumbTipEntity/indexTipEntity) - just a ModelComponent, no VideoPlayerComponent,
+     * since it has nothing to do with video playback. Position is set every frame by the caller from
+     * live hand-tracking data, not here.
+     */
+    fun assembleHandMarkerEntity(entity: Entity, radiusMeters: Float) {
+        val mesh = MeshResource.createSphere(radiusMeters)
+        check(mesh.valid) { "createSphere returned an invalid mesh" }
+        val material = UnlitMaterial.create().apply {
+            setBaseColor(HAND_MARKER_COLOR)
         }
         entity.components.set(ModelComponent(mesh, material))
     }

@@ -10,6 +10,7 @@ import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.ecs.resource.VideoMaterial
 import com.pico.spatial.core.ecs.video.VideoDimensionMode
 import com.pico.spatial.core.math.Vector3
+import com.pico.spatial.tracking.hand.HandTrackingProvider
 import com.pico.spatial.tracking.hmd.HMDTrackingProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +38,7 @@ const val SPHERE_RADIUS_METERS = 10f
 const val FULL_SPHERE_FOV_DEGREES = 360f
 const val HEMISPHERE_FOV_DEGREES = 180f
 const val ENVIRONMENT_SKYBOX_RADIUS_METERS = 20f
+const val HAND_MARKER_RADIUS_METERS = 0.008f
 
 // "Docked" onto a cinema wall: farther away than the default floating position, simulating a
 // screen embedded across the room rather than a panel hovering in front of the user.
@@ -60,6 +62,16 @@ class PlaybackViewModel(
     var hmdTrackingProvider: HMDTrackingProvider? = null
         private set
 
+    // Same ANR risk as HMDTrackingProvider.start() below - both go through the same
+    // BaseTrackingDataProvider.start() -> dataSource.addDataCallback() blocking path (confirmed in
+    // tracking-0.13.3-sources.jar), so this must also run on backgroundScope, never the main thread.
+    var handTrackingProvider: HandTrackingProvider? = null
+        private set
+
+    val thumbTipEntity = Entity()
+    val indexTipEntity = Entity()
+    private var handMarkersAssembled = false
+
     // HMDTrackingProvider.start() is a synchronous native call (blocks on the SDK's own
     // spatial::jobs::JobWaiter::wait) - confirmed via a real ANR (`dumpsys dropbox --print`,
     // "Input dispatching timed out ... Waited 5000ms", stack ending in
@@ -69,6 +81,17 @@ class PlaybackViewModel(
     // main-thread requirement, so dispatching the call itself to a background thread is safe and
     // keeps the click handler from blocking input dispatch long enough to trip the ANR watchdog.
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private fun assembleHandMarkersIfNeeded() {
+        if (handMarkersAssembled) return
+        PlaybackEntityAssembler.assembleHandMarkerEntity(thumbTipEntity, HAND_MARKER_RADIUS_METERS)
+        PlaybackEntityAssembler.assembleHandMarkerEntity(indexTipEntity, HAND_MARKER_RADIUS_METERS)
+        // Hidden until the first frame of real hand-tracking data arrives - see the per-frame loop
+        // in ImmersiveScene.kt (Task 8) that flips these back on/off based on tracking availability.
+        thumbTipEntity.enabled = false
+        indexTipEntity.enabled = false
+        handMarkersAssembled = true
+    }
 
     private var subtitleCues: List<SubtitleCue> = emptyList()
 
@@ -268,12 +291,16 @@ class PlaybackViewModel(
         subtitleCues = loadSubtitleCues(item.subtitleUri)
         returnToMainWindowRequested = false
         isHudVisible = true
+        assembleHandMarkersIfNeeded()
         // Assign the provider immediately (ImmersiveScene's per-frame loop reads it null-safely and
         // just sees a default zero pose until start() actually finishes) - only the blocking start()
         // call itself is pushed off the main thread, so the click handler returns right away.
         val provider = HMDTrackingProvider()
         hmdTrackingProvider = provider
         backgroundScope.launch { provider.start() }
+        val handProvider = HandTrackingProvider()
+        handTrackingProvider = handProvider
+        backgroundScope.launch { handProvider.start() }
         currentStereoMode.value = item.stereoMode
         if (item.projection == Projection.FLAT) {
             // Applied before applyProjection so the screen lands on the right anchor straight away.
@@ -298,6 +325,8 @@ class PlaybackViewModel(
         manager.pause()
         hmdTrackingProvider?.stop()
         hmdTrackingProvider = null
+        handTrackingProvider?.stop()
+        handTrackingProvider = null
         isImmersive.value = false
         returnToMainWindowRequested = false
     }
@@ -345,6 +374,8 @@ class PlaybackViewModel(
         manager.reset()
         hmdTrackingProvider?.stop()
         hmdTrackingProvider = null
+        handTrackingProvider?.stop()
+        handTrackingProvider = null
         backgroundScope.cancel()
     }
 }
