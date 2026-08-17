@@ -89,8 +89,12 @@ private val HEADER_ROW_HEIGHT_PADDING = 16.dp
 // (environment selector + "开始播放"), so the two vertically center-align across the Row's two
 // independent Columns the same way HEADER_ROW_HEIGHT does at the top. Applied to the wrapping Box
 // at each call site; LibraryBottomBar's own Row just fillMaxSize()s to adopt whatever height its
-// parent Box is given, rather than duplicating this constant into that file.
-private val FOOTER_HEIGHT = 56.dp
+// parent Box is given, rather than duplicating this constant into that file. Bumped from 56.dp to
+// give the bottom bar's enlarged elements (44.dp-min format/subtitle pills, 56.dp-min "开始播放")
+// comfortable vertical room instead of nearly touching the box's edges - this also makes the
+// sidebar's "其它" trigger taller, consistent with (not a regression of) this constant's own
+// documented purpose of keeping the two vertically aligned.
+private val FOOTER_HEIGHT = 64.dp
 
 // Fixed sidebar width - see the comment at its usage site for why this must be explicit now that
 // the "其它" action lives in a plain wrapping Column instead of inside SideNavigation's own
@@ -103,6 +107,12 @@ private val SIDEBAR_WIDTH = 220.dp
 // SideNavigation.kt), so a plain .height() here sets the outer row height cleanly without being
 // squeezed by the internal padding.
 private val NAV_ITEM_HEIGHT = 64.dp
+
+// Real gap between sidebar items, inserted as a sibling Spacer rather than padding on either
+// item's own modifier - see the comment at its usage site for why padding-before-clickable would
+// make this dead space carved out of an item's own tap area instead of a real gap between two
+// full-sized ones.
+private val SIDEBAR_ITEM_GAP = 8.dp
 
 private fun LibraryCategory.iconRes(): Int = when (this) {
     LibraryCategory.LIBRARY -> R.drawable.ic_nav_library
@@ -251,39 +261,49 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         // enum value itself is kept (LibraryViewModel.visibleItems()/iconRes()'s
                         // exhaustive `when` branches still need it to compile) - restoring the entry
                         // point later is a one-line revert of this filter.
-                        LibraryCategory.entries.filter { it != LibraryCategory.IMPORT && it != LibraryCategory.HISTORY }.forEach { category ->
-                            val categoryInteractionSource = remember(category) { MutableInteractionSource() }
-                            SideNavigationItem(
-                                selected = libraryViewModel.selectedCategory == category,
-                                colors = SideNavigationItemDefaults.colors(
-                                    unselectedContentColor = SpacePlayerTextSecondary,
-                                    unselectedContainerColor = Color.Transparent,
-                                    selectedContentColor = SpacePlayerTextPrimary,
-                                    selectedContainerColor = SpacePlayerSurfaceSelected,
-                                ),
-                                modifier = Modifier
-                                    .height(NAV_ITEM_HEIGHT)
-                                    .padding(bottom = 4.dp)
-                                    .clickable(
-                                        interactionSource = categoryInteractionSource,
-                                        indication = LocalIndication.current,
-                                        onClick = { libraryViewModel.selectCategory(category) },
-                                    )
-                                    .controllerHapticFeedback(interactionSource = categoryInteractionSource),
-                                leading = {
-                                    Icon(
-                                        painter = painterResource(id = category.iconRes()),
-                                        contentDescription = null,
-                                    )
-                                },
-                                content = {
-                                    Text(
-                                        text = category.label(),
-                                        style = PicoTheme.typography.bodyLarge.copy(fontSize = 18.sp),
-                                    )
-                                },
-                            )
-                        }
+                        LibraryCategory.entries.filter { it != LibraryCategory.IMPORT && it != LibraryCategory.HISTORY }
+                            .forEachIndexed { index, category ->
+                                // A real sibling Spacer, not padding inside either item's own modifier -
+                                // SideNavigationItem's clip()/drawBehind{} highlight paint sit outside
+                                // the caller's modifier (confirmed by decompiling
+                                // design-0.13.3-sources.jar), so a trailing padding on one item would
+                                // shrink only what's clickable on that item, not what's painted, and
+                                // would still leave the highlight rectangle extending into the "gap" -
+                                // a Spacer can't be absorbed by either neighbor's hit box or paint area.
+                                if (index > 0) {
+                                    Spacer(modifier = Modifier.height(SIDEBAR_ITEM_GAP))
+                                }
+                                val categoryInteractionSource = remember(category) { MutableInteractionSource() }
+                                SideNavigationItem(
+                                    selected = libraryViewModel.selectedCategory == category,
+                                    colors = SideNavigationItemDefaults.colors(
+                                        unselectedContentColor = SpacePlayerTextSecondary,
+                                        unselectedContainerColor = Color.Transparent,
+                                        selectedContentColor = SpacePlayerTextPrimary,
+                                        selectedContainerColor = SpacePlayerSurfaceSelected,
+                                    ),
+                                    modifier = Modifier
+                                        .height(NAV_ITEM_HEIGHT)
+                                        .clickable(
+                                            interactionSource = categoryInteractionSource,
+                                            indication = LocalIndication.current,
+                                            onClick = { libraryViewModel.selectCategory(category) },
+                                        )
+                                        .controllerHapticFeedback(interactionSource = categoryInteractionSource),
+                                    leading = {
+                                        Icon(
+                                            painter = painterResource(id = category.iconRes()),
+                                            contentDescription = null,
+                                        )
+                                    },
+                                    content = {
+                                        Text(
+                                            text = category.label(),
+                                            style = PicoTheme.typography.bodyLarge.copy(fontSize = 18.sp),
+                                        )
+                                    },
+                                )
+                            }
                     }
 
                     Spacer(modifier = Modifier.weight(1f))
