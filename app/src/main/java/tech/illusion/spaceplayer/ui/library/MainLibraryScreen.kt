@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -57,9 +58,10 @@ import com.pico.spatial.ui.design.SideNavigation
 import com.pico.spatial.ui.design.SideNavigationItem
 import com.pico.spatial.ui.design.SideNavigationItemDefaults
 import com.pico.spatial.ui.design.Text
-import com.pico.spatial.ui.design.windows.AlertDialog
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
+import com.pico.spatial.ui.foundation.material.backgroundMaterial
+import com.pico.spatial.ui.platform.Material
 import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
 import com.pico.spatial.ui.platform.containers.StageStyle
 import kotlinx.coroutines.launch
@@ -204,37 +206,10 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
         // glass switch is the documented opaque-root pattern.
         // design-style: opaque-root
         Box(modifier = modifier.fillMaxSize().background(SpacePlayerBackground)) {
-            if (!hasVideoPermission) {
-                // A blocking rationale prompt (no back-press/outside-tap dismissal, matching
-                // AlertDialogDefaults.DefaultAlertDialogProperties) - the library can't be used
-                // without granting access, so there is nothing behind it worth showing.
-                AlertDialog(
-                    title = {
-                        Text(
-                            text = stringResource(R.string.library_permission_rationale),
-                            color = SpacePlayerTextPrimary,
-                            style = PicoTheme.typography.titleLarge.copy(fontSize = 20.sp),
-                        )
-                    },
-                    buttons = {
-                        Button(
-                            onClick = { permissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = SpacePlayerAccent,
-                                contentColor = SpacePlayerOnAccent,
-                            ),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.library_grant_permission),
-                                color = SpacePlayerOnAccent,
-                                style = PicoTheme.typography.titleLarge.copy(fontSize = 18.sp),
-                            )
-                        }
-                    },
-                )
-                return@Box
-            }
-
+            // hasVideoPermission no longer gates this whole Box (a prior version did, hiding the
+            // sidebar/frame entirely) - per user request the app's basic frame (sidebar, category
+            // title) always renders; only the video-browsing content area below swaps to the
+            // permission rationale + grant button in its place.
             Row(modifier = Modifier.fillMaxSize()) {
                 // Wraps SideNavigation plus the "其它" action so the latter can be pinned to the
                 // very bottom of the sidebar via a weighted Spacer - SideNavigation's own internal
@@ -372,60 +347,103 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         )
                     }
 
-                    val historyItems = historyStore.recentEntriesDescending().mapNotNull { (uriKey, _) ->
-                        (libraryViewModel.libraryItems + libraryViewModel.downloadsItems)
-                            .find { it.uri.toString() == uriKey }
-                    }
-                    val items = libraryViewModel.visibleItems(historyItems = historyItems)
+                    if (hasVideoPermission) {
+                        val historyItems = historyStore.recentEntriesDescending().mapNotNull { (uriKey, _) ->
+                            (libraryViewModel.libraryItems + libraryViewModel.downloadsItems)
+                                .find { it.uri.toString() == uriKey }
+                        }
+                        val items = libraryViewModel.visibleItems(historyItems = historyItems)
 
-                    Box(modifier = Modifier.fillMaxWidth().padding(top = 8.dp).weight(1f)) {
-                        val gridState = rememberLazyGridState()
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
-                            state = gridState,
-                            contentPadding = PaddingValues(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            items(items = items, key = { it.uri }) { item ->
-                                VideoGridCard(
-                                    item = item,
-                                    selected = libraryViewModel.selectedItem?.uri == item.uri,
-                                    onClick = { libraryViewModel.selectItem(item) },
+                        Box(modifier = Modifier.fillMaxWidth().padding(top = 8.dp).weight(1f)) {
+                            val gridState = rememberLazyGridState()
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                state = gridState,
+                                contentPadding = PaddingValues(4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                items(items = items, key = { it.uri }) { item ->
+                                    VideoGridCard(
+                                        item = item,
+                                        selected = libraryViewModel.selectedItem?.uri == item.uri,
+                                        onClick = { libraryViewModel.selectItem(item) },
+                                    )
+                                }
+                            }
+                            ScrollIndicator(state = gridState)
+                        }
+
+                        Box(modifier = Modifier.fillMaxWidth().height(FOOTER_HEIGHT)) {
+                            if (libraryViewModel.selectedItem != null) {
+                                LibraryBottomBar(
+                                    selectedItem = libraryViewModel.selectedItem,
+                                    selectedEnvironment = selectedEnvironment,
+                                    onSelectEnvironment = { selectedEnvironment = it },
+                                    onFormatChange = { projection, stereoMode ->
+                                        val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
+                                        libraryViewModel.preferencesStore.setFormatOverride(item.uri, projection, stereoMode)
+                                        libraryViewModel.refreshLibrary()
+                                        libraryViewModel.refreshDownloads()
+                                        (libraryViewModel.libraryItems + libraryViewModel.downloadsItems)
+                                            .find { it.uri == item.uri }
+                                            ?.let { libraryViewModel.selectItem(it) }
+                                    },
+                                    onPickSubtitle = { subtitleLauncher.launch(arrayOf("*/*")) },
+                                    onStartPlayback = {
+                                        val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
+                                        val itemToPlay = if (item.projection == Projection.FLAT) {
+                                            item.copy(preferredEnvironment = item.preferredEnvironment ?: selectedEnvironment)
+                                        } else {
+                                            item
+                                        }
+                                        playbackViewModel.startPlayback(itemToPlay)
+                                        coroutineScope.launch { navigator.openStage(IMMERSIVE_STAGE_ID, style = StageStyle.Full) }
+                                    },
                                 )
                             }
                         }
-                        ScrollIndicator(state = gridState)
-                    }
-
-                    Box(modifier = Modifier.fillMaxWidth().height(FOOTER_HEIGHT)) {
-                        if (libraryViewModel.selectedItem != null) {
-                            LibraryBottomBar(
-                                selectedItem = libraryViewModel.selectedItem,
-                                selectedEnvironment = selectedEnvironment,
-                                onSelectEnvironment = { selectedEnvironment = it },
-                                onFormatChange = { projection, stereoMode ->
-                                    val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
-                                    libraryViewModel.preferencesStore.setFormatOverride(item.uri, projection, stereoMode)
-                                    libraryViewModel.refreshLibrary()
-                                    libraryViewModel.refreshDownloads()
-                                    (libraryViewModel.libraryItems + libraryViewModel.downloadsItems)
-                                        .find { it.uri == item.uri }
-                                        ?.let { libraryViewModel.selectItem(it) }
-                                },
-                                onPickSubtitle = { subtitleLauncher.launch(arrayOf("*/*")) },
-                                onStartPlayback = {
-                                    val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
-                                    val itemToPlay = if (item.projection == Projection.FLAT) {
-                                        item.copy(preferredEnvironment = item.preferredEnvironment ?: selectedEnvironment)
-                                    } else {
-                                        item
-                                    }
-                                    playbackViewModel.startPlayback(itemToPlay)
-                                    coroutineScope.launch { navigator.openStage(IMMERSIVE_STAGE_ID, style = StageStyle.Full) }
-                                },
-                            )
+                    } else {
+                        // The app's frame (sidebar, category title above) stays visible per user
+                        // request - only this content area, where the grid would normally sit,
+                        // swaps to the permission rationale + grant button. Styled as an inline
+                        // glass card (same backgroundMaterial(Material.Regular) pattern as
+                        // LoadingErrorAttachment/SubtitleAttachment) rather than a modal AlertDialog,
+                        // since a modal would dim/cover the sidebar this change is meant to keep
+                        // visible.
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).weight(1f),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .widthIn(max = 480.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .backgroundMaterial(true, Material.Regular)
+                                    .padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.library_permission_rationale),
+                                    color = SpacePlayerTextPrimary,
+                                    style = PicoTheme.typography.titleLarge.copy(fontSize = 20.sp),
+                                )
+                                Button(
+                                    onClick = { permissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO) },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = SpacePlayerAccent,
+                                        contentColor = SpacePlayerOnAccent,
+                                    ),
+                                    modifier = Modifier.padding(top = 24.dp),
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.library_grant_permission),
+                                        color = SpacePlayerOnAccent,
+                                        style = PicoTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
