@@ -6,41 +6,37 @@ import tech.illusion.spaceplayer.playback.Projection
 import tech.illusion.spaceplayer.playback.StereoMode
 
 /**
- * 识别流水线：容器探测（多视图判断 + 顺带拿宽高）→ 文件名关键词 → 宽高比补缺 → 默认兜底。
- * 文件名在每个字段上都优先于宽高比——宽高比只填文件名没提到的那个字段，从不覆盖文件名已经命中的
- * 字段。见设计稿 docs/superpowers/specs/2026-08-13-aspect-ratio-format-detection-design.md。
+ * 识别流水线：容器探测（多视图判断）→ 球面/立体元数据探测（读视频文件本身的 st3d/sv3d box）→
+ * 默认兜底。文件名关键词和宽高比推测两层已删除——用 ffprobe 实测过的真实文件证明两者在 180°SBS/
+ * 360°TB 这类组合上会给出确凿的错误答案（不是阈值没调好，是整帧宽高比本身就有歧义），而这些真实
+ * 文件都携带标准的 st3d/sv3d 元数据。见设计稿
+ * docs/superpowers/specs/2026-08-17-spherical-metadata-format-detection-design.md。
  */
-class FormatDetector(private val multiviewTrackProbe: MultiviewTrackProbe) {
-    fun detect(context: Context, uri: Uri, displayName: String): DetectedFormat {
+class FormatDetector(
+    private val multiviewTrackProbe: MultiviewTrackProbe,
+    private val sphericalMetadataProbe: SphericalMetadataProbe,
+) {
+    fun detect(context: Context, uri: Uri): DetectedFormat {
         val containerResult = multiviewTrackProbe.probe(context, uri)
-        val filenameHint = FilenameFormatDetector.detect(displayName)
-        val aspectHint = aspectRatioHintOrNull(containerResult)
+        val metadataHint = sphericalMetadataProbe.probe(context, uri)
 
         if (containerResult.isMultiview) {
             return DetectedFormat(
-                projection = filenameHint.projection ?: aspectHint?.projection ?: Projection.FLAT,
+                projection = metadataHint.projection ?: Projection.FLAT,
                 stereoMode = StereoMode.MULTIVIEW_MVHEVC,
                 formatSource = FormatSource.DETECTED_CONTAINER,
             )
         }
 
-        val projection = filenameHint.projection ?: aspectHint?.projection
-        val stereoMode = filenameHint.stereoMode ?: aspectHint?.stereoMode
-        val formatSource = when {
-            filenameHint.projection != null || filenameHint.stereoMode != null -> FormatSource.DETECTED_FILENAME
-            aspectHint != null -> FormatSource.DETECTED_ASPECT_RATIO
-            else -> FormatSource.DEFAULT
+        val formatSource = if (metadataHint.projection != null || metadataHint.stereoMode != null) {
+            FormatSource.DETECTED_METADATA
+        } else {
+            FormatSource.DEFAULT
         }
         return DetectedFormat(
-            projection = projection ?: Projection.FLAT,
-            stereoMode = stereoMode ?: StereoMode.MONO,
+            projection = metadataHint.projection ?: Projection.FLAT,
+            stereoMode = metadataHint.stereoMode ?: StereoMode.MONO,
             formatSource = formatSource,
         )
-    }
-
-    private fun aspectRatioHintOrNull(containerResult: ContainerProbeResult): DetectedFormat? {
-        val width = containerResult.videoWidth ?: return null
-        val height = containerResult.videoHeight ?: return null
-        return AspectRatioFormatDetector.detect(width, height)
     }
 }

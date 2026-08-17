@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import tech.illusion.spaceplayer.library.FormatDetector
 import tech.illusion.spaceplayer.library.FormatSource
 import tech.illusion.spaceplayer.library.MediaExtractorMultiviewProbe
+import tech.illusion.spaceplayer.library.Mp4SphericalStereoMetadataProbe
 import tech.illusion.spaceplayer.library.RawVideoRecord
 import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.library.VideoLibraryRepository
@@ -30,7 +31,7 @@ class LibraryViewModel(
     private val sessionState: LibrarySessionState,
 ) {
     private val repository = VideoLibraryRepository(context)
-    private val formatDetector = FormatDetector(MediaExtractorMultiviewProbe())
+    private val formatDetector = FormatDetector(MediaExtractorMultiviewProbe(), Mp4SphericalStereoMetadataProbe())
     val preferencesStore =
         VideoPreferencesStore(SharedPreferencesKeyValueStore(context, "video_preferences"))
 
@@ -80,7 +81,7 @@ class LibraryViewModel(
 
     fun toVideoItem(record: RawVideoRecord): VideoItem {
         val uriPrefs = preferencesStore.get(record.uri)
-        val detected = formatDetector.detect(context, record.uri, record.displayName)
+        val detected = formatDetector.detect(context, record.uri)
         // Uri.parse 在这里可以放心用——toVideoItem 全程没有单测覆盖，属于 VideoLibraryRepository/
         // PlaybackManager 那一类"触碰 Android 框架、只做构建+模拟器验证"的代码。
         val subtitleUri = uriPrefs.subtitleUri?.let(Uri::parse)
