@@ -59,6 +59,7 @@ import com.pico.spatial.ui.design.SideNavigationItem
 import com.pico.spatial.ui.design.SideNavigationItemDefaults
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.design.ToggleableChip
+import com.pico.spatial.ui.design.windows.AlertDialog
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
 import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
@@ -206,26 +207,33 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
         // design-style: opaque-root
         Box(modifier = modifier.fillMaxSize().background(SpacePlayerBackground)) {
             if (!hasVideoPermission) {
-                Column(modifier = Modifier.fillMaxSize().padding(32.dp)) {
-                    Text(
-                        text = stringResource(R.string.library_permission_rationale),
-                        color = SpacePlayerTextPrimary,
-                        style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
-                    )
-                    Button(
-                        onClick = { permissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = SpacePlayerAccent,
-                            contentColor = SpacePlayerOnAccent,
-                        ),
-                    ) {
+                // A blocking rationale prompt (no back-press/outside-tap dismissal, matching
+                // AlertDialogDefaults.DefaultAlertDialogProperties) - the library can't be used
+                // without granting access, so there is nothing behind it worth showing.
+                AlertDialog(
+                    title = {
                         Text(
-                            text = stringResource(R.string.library_grant_permission),
-                            color = SpacePlayerOnAccent,
+                            text = stringResource(R.string.library_permission_rationale),
+                            color = SpacePlayerTextPrimary,
                             style = PicoTheme.typography.titleLarge.copy(fontSize = 20.sp),
                         )
-                    }
-                }
+                    },
+                    buttons = {
+                        Button(
+                            onClick = { permissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SpacePlayerAccent,
+                                contentColor = SpacePlayerOnAccent,
+                            ),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.library_grant_permission),
+                                color = SpacePlayerOnAccent,
+                                style = PicoTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                            )
+                        }
+                    },
+                )
                 return@Box
             }
 
