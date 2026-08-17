@@ -56,8 +56,7 @@ fun StereoMode.badgeLabel(): String? = when (this) {
 fun FormatSource.label(): String = stringResource(
     when (this) {
         FormatSource.DETECTED_CONTAINER -> R.string.format_source_container
-        FormatSource.DETECTED_FILENAME -> R.string.format_source_filename
-        FormatSource.DETECTED_ASPECT_RATIO -> R.string.format_source_aspect_ratio
+        FormatSource.DETECTED_METADATA -> R.string.format_source_metadata
         FormatSource.MANUAL_OVERRIDE -> R.string.format_source_manual
         FormatSource.DEFAULT -> R.string.format_source_default
     },
