@@ -1660,3 +1660,62 @@ Important 发现明确问过用户，两条都选了"先记录、这轮不处理
    `MediaExtractor` 同步调用在这次改动之前就有），不是这次引入的新问题类别**，但确实让单次代价翻倍、
    触发频率也比设计阶段设想的更高。这次明确不做（不引入 `Dispatchers.IO`/协程重构），留给后续单独的
    性能优化 pass。
+
+## 2026-08-18：主面板侧边栏 + 底部栏点击区域/间距重设计
+
+用户反馈"侧边栏和底部格式按钮等不太容易点击"，要求各按钮间互相留有距离。排查发现根因不是简单的"元素太
+小"，而是一个在多处重复出现的 Compose 修饰符顺序问题：**`.padding(...)` 写在 `.clickable()`/
+`.toggleable()` 之前，会让这段 padding 被排除在可点击命中区域之外**——看起来像是两个元素之间的间隙，
+实际是从其中一个元素自己的可点击区域里挖出来的死区，不是真正保护两者不互相误触的空间。设计稿见
+`docs/superpowers/specs/2026-08-17-library-panel-touch-target-design.md`，实施计划见
+`docs/superpowers/plans/2026-08-17-library-panel-touch-target.md`，Subagent-Driven Development 执行，
+4 个任务全部 subagent 实现 + 独立 subagent 审查通过，范围明确只包含侧边栏和底部栏，视频网格卡不动。
+
+### 改动
+
+- **侧边栏 `SideNavigationItem`**：删掉每项自己 modifier 链里 `.height(NAV_ITEM_HEIGHT)` 和
+  `.clickable()` 之间的 `.padding(bottom = 4.dp)`，改成在 `forEachIndexed` 循环里、条目之间插入一个
+  真正的兄弟节点 `Spacer(Modifier.height(SIDEBAR_ITEM_GAP = 8.dp))`。`NAV_ITEM_HEIGHT` 保持 64.dp
+  不变——投诉不是"64dp 不够大"，而是实际可点击区域因为这个 padding 只有约 60dp。`FOOTER_HEIGHT` 从
+  56.dp 提到 64.dp，给底部栏放大后的元素留出垂直呼吸空间（副作用：侧边栏"其它·选择文件"入口也跟着变高，
+  这跟这个常量本身"让两处footer元素保持垂直对齐"的既有用途是一致的，不是回归）。
+- **`FormatMenuButton`**：加了 `.heightIn(min = 44.dp)`，放在修饰符链最前面（`.clip(shape)` 之前），
+  让整块 clip/border/background/clickable 区域一起变高，内容仍靠 `verticalAlignment = CenterVertically`
+  居中。这个组件本身的 clip/hover/clickable 顺序原来就是对的（在内边距之前），这次只是让它变得足够高。
+- **底部栏 `LibraryBottomBar`**：环境 `ToggleableChip` 从默认的 `ChipsDefaults.Small`（32.dp）换成
+  `ChipsDefaults.Regular`（40.dp）；字幕状态从裸文字 `Text`（可点击区域零内边距，是整个面板里最差的
+  点击目标）换成新的私有组件 `PillButton`，套用跟 `FormatMenuButton` 完全相同的视觉外壳（圆角、1.dp
+  边框、背景填充、44.dp 最小高度），但只是单一动作没有下拉菜单；"开始播放"按钮从默认的
+  `ButtonDefaults.Regular`（48.dp）换成 `ButtonDefaults.Max`（56.dp），作为整个条里最主要的操作，
+  现在的存在感不比旁边的次要控件小。整条 `Row` 加了 `horizontalArrangement = Arrangement.spacedBy(16.dp)`，
+  删掉了所有手动的逐个 `.padding(end = Ndp)`——这几处手动 padding 里，环境 chip 和两个格式菜单按钮的
+  都是加在各自 `.toggleable()`/`.clickable()` **之前**，同样是死区不是间隙；`Arrangement.spacedBy` 挂
+  在父级 `Row` 上，天然不可能被任何子元素的可点击区域吞掉或排除。
+- 这次没有用到任何 PICO 官方的最小点击目标/间距数值规范——查过 `AGENTS.md` 本身、所有捆绑的
+  `pico-spatial-agentic-tools` 技能参考文件、以及 PICO 官方的 `spatial-design_pico-design-guidelines.md`，
+  都没有找到这类数字规范。这次用的所有尺寸（40/44/56/64.dp）都是 SpatialUI SDK 自带的现有档位
+  （`ChipsDefaults`/`ButtonDefaults`），不是拍脑袋定的数字。
+
+### 验证状态（如实分层记录）
+
+- **可自证、已验证**：`./gradlew clean assembleDebug testDebugUnitTest` BUILD SUCCESSFUL，单测数量
+  相比改动前不变（这次纯布局改动，没加新的可单测行为）。4 个任务全部 subagent 实现 + 独立 subagent
+  审查 approved，其中 Task 3（底部栏重写）的审查明确逐行核对了 `PillButton` 新组件的修饰符顺序跟
+  `FormatMenuButton.kt` 完全一致、`Arrangement.spacedBy` 确实挂在覆盖全部子元素的那层 `Row` 上、字幕
+  状态的颜色/文案分支逻辑原样保留没有被换掉或反转。装到模拟器（`emulator-5554`，当时真机
+  `PB311XKGL4160087B` 未连接）、`logcat` 干净、没有 `FATAL`/`AndroidRuntime`，截图确认资源库主界面
+  正常渲染、侧边栏项目可见。
+- **没有验证到、需要用户戴设备确认的部分**（如实列出）：
+  1. 侧边栏每一项在完整可视高度内（包括贴近上下边缘的位置）是否真的都能舒适点中，条目间是否有清晰
+     可见的间隙——这条链路的代码逐行核对过是对的，但没有真机手动点过。
+  2. 底部栏（先选中一个视频让这个条渲染出来）里环境 chip、格式/立体格式菜单按钮、字幕状态胶囊是否都
+     舒适可点、彼此间隔是否清晰可见——自动化验证卡在两个已知问题上：模拟器截图能截到画面，但
+     `adb shell input tap` 在这个 spatial compositor 窗口里点击坐标跟画面实际渲染位置不对应（试了一次
+     点击资源卡缩略图，没有触发选中，截图前后一致），这也是本项目早前记录过的已知限制，不是这次新发现
+     的问题，只是这次直接撞上了——没能靠自动化点开底部栏来截图验证。
+  3. "开始播放"按钮现在是否肉眼可见地比之前更突出（更高）。
+  4. 点字幕胶囊是否仍然能正常打开文件选择器（这次只换了外壳，`onPickSubtitle` 回调本身没有改动，但
+     没有实测走一遍）。
+
+  以上 4 项需要用户实际戴上设备、用真实指向输入（控制器/手势）逐个试一遍——真机当时没有连接，无法在
+  这次会话里补测。
