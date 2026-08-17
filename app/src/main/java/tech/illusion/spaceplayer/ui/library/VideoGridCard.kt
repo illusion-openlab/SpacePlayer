@@ -129,7 +129,6 @@ fun VideoGridCard(
                     )
                 }
             }
-
         }
 
         Column(modifier = Modifier.fillMaxWidth().heightIn(min = INFO_BLOCK_MIN_HEIGHT).padding(12.dp)) {

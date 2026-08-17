@@ -183,7 +183,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
 
     // A format correction made from inside the immersive HUD is persisted to VideoPreferencesStore,
     // but the grid renders VideoItems snapshotted at the last refresh - re-read them once immersive
-    // playback ends so the corrected card's badge and the bottom bar's menus agree with what the
+    // playback ends so the corrected card's caption and the bottom bar's menus agree with what the
     // HUD was just showing. Re-selecting by uri is needed because selectedItem is its own snapshot,
     // not a value derived from libraryItems/downloadsItems (same reason as the subtitle picker).
     LaunchedEffect(playbackViewModel.isImmersive.value) {

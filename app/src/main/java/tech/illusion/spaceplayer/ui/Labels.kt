@@ -43,7 +43,11 @@ fun StereoMode.shortLabel(): String = stringResource(
     },
 )
 
-/** Compact abbreviation for the video grid card's format badge; null for MONO (nothing to show). */
+/**
+ * Compact abbreviation for a stereo mode; null for MONO (nothing to show). Deferred dead code as of
+ * 2026-08-17's badge removal - no remaining callers (grep confirmed), left in place per the same
+ * "not part of this task's scope" reasoning as `Projection.badgeColor()` in `SpacePlayerPalette.kt`.
+ */
 @Composable
 fun StereoMode.badgeLabel(): String? = when (this) {
     StereoMode.MONO -> null

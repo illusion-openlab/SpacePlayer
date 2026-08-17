@@ -271,7 +271,7 @@ class PlaybackViewModel(
      * `CypressMediaPlayer`, so position, volume and buffered data all survive.
      *
      * Persisted through the same [VideoPreferencesStore.setFormatOverride] path as the library
-     * entry point, so the correction outlives this session and the library card's badge picks it up
+     * entry point, so the correction outlives this session and the library card's caption picks it up
      * after the refresh triggered on return to the main window.
      */
     fun correctFormat(projection: Projection, stereoMode: StereoMode) {
