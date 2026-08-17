@@ -38,7 +38,6 @@ import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import tech.illusion.spaceplayer.library.VideoItem
-import tech.illusion.spaceplayer.ui.badgeLabel
 import tech.illusion.spaceplayer.ui.label
 
 private const val THUMBNAIL_SIZE_PX = 480
@@ -111,29 +110,6 @@ fun VideoGridCard(
                     contentDescription = item.displayName,
                     modifier = Modifier.fillMaxSize(),
                 )
-            }
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp),
-            ) {
-                val stereoLabel = item.stereoMode.badgeLabel()
-                Badge(
-                    badgeColor = BadgeDefaults.badgeColors(
-                        backgroundColor = item.projection.badgeColor(),
-                        contentColor = SpacePlayerOnAccent,
-                    ),
-                ) {
-                    Text(
-                        text = if (stereoLabel != null) {
-                            "${item.projection.label()} · $stereoLabel"
-                        } else {
-                            item.projection.label()
-                        },
-                        style = PicoTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                    )
-                }
             }
 
             Box(
