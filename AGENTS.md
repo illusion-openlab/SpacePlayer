@@ -1540,3 +1540,94 @@ review 这一步不能省。全量 review 的 3 个 Important + 3 个 Minor 发�
   re-review 记录）已经存在
   `.superpowers/sdd/2026-08-14-library-ux-and-hand-interaction/progress.md`，方便回溯是哪个任务、哪次
   review 的判断。
+
+## 2026-08-17：球面/立体元数据格式检测替换文件名+宽高比启发式，去掉资源库卡片格式标签
+
+用户直接给了 3 个真实视频文件（`180-LR.mp4`/`360_TB.mp4`/`360.mp4`，文件名已按真实格式改好），问"你检查一下
+这里的视频格式你是否能正常获取"。用 `ffprobe` 一查就发现问题：这三个文件都带着真实的 MP4 标准元数据
+（`st3d`/`sv3d` box 或者更早的 Google Spatial Media V1 `uuid`/XML box——当时只看了 ffprobe 抽象出来的
+`side_data_list` 标签就以为三个都是新方案，后来装机验证才发现这个假设本身是错的，见下文），但用当时的两层
+识别（文件名关键词 + 宽高比推测）手动过一遍代码逐行核对，3 个里有 2 个会被判错：文件名检测要求下划线分隔
+关键词（`_180_`/`_360_`/`_sbs`/`_tb`），真实文件名 `180-LR.mp4` 用连字符不是下划线，一个都命中不了；宽高比
+检测的球面/半球分支结构上只会返回 MONO，而且 180°SBS 和 360°单眼的整幅画面宽高比完全一样（360°TB 和
+180°单眼同理），单凭宽高比这两组组合本质上无法区分。用户当场拍板：**彻底删除文件名检测、彻底删除宽高比
+兜底，只做新方案（`st3d`/`sv3d`），旧方案（`uuid`/XML）明确不做**；另外要求资源库卡片缩略图左上角的彩色
+格式标签也去掉（时长标签和缩略图下方的"识别方式 · 文件大小"说明文字保留）。设计稿见
+`docs/superpowers/specs/2026-08-17-spherical-metadata-format-detection-design.md`，实施计划见
+`docs/superpowers/plans/2026-08-17-spherical-metadata-format-detection.md`，Subagent-Driven Development
+执行，6 个任务全部 subagent 实现 + 独立 subagent 审查通过。
+
+### 改动
+
+- **新增 `Mp4BoxReader`**（`library/boxparse/`，纯 Kotlin，零 Android 依赖）：通用 ISO/IEC 14496-12 box
+  树遍历器，`SeekableByteSource` 接口 + `readHeaderAt`/`findChild`/`findAllChildren`/`findPath`，largesize
+  （64 位长度）、越界/截断都按"找不到"处理而不是抛异常。用 `FileChannel` 而不是顺序 `InputStream` 跳字节
+  ——`moov` box 不一定在文件头部（非 faststart 编码），直接 seek 过去不花代价，顺序跳过几百 MB 的 `mdat`
+  才是真的贵。
+- **新增 `SphericalStereoMetadataProbe`**：`SphericalStereoMetadataReader.read()`（纯函数，unit test 直接
+  灌 `ByteArraySeekableByteSource`）负责走 `moov → 第一条 handler_type="vide" 的 trak → mdia/minf/stbl/stsd
+  → 第一个 sample entry → 跳过 78 字节 VisualSampleEntry 固定头 → 在剩余子 box 里找 `st3d`/`sv3d``；
+  `Mp4SphericalStereoMetadataProbe` 是唯一碰 Android API 的薄封装（`ParcelFileDescriptor.use { }` 是唯一
+  关闭点，内部 `FileChannel` 不单独 `.use{}`，避免双重关闭）。`st3d` payload 里 `stereo_mode` 字节只认
+  0/1/2（mono/top-bottom/side-by-side），其他值（如 3=stereo-custom）视为未识别，不猜；`sv3d` 只看存在
+  与否（不解析内部 `proj`/`equi` 子 box），存在即当 360° 等距柱状投影。
+- **`FormatDetector` 重写**：`detect(context, uri)` 去掉 `displayName` 参数，流水线简化成"容器多视图探测
+  →（未命中则）球面/立体元数据探测 → 默认兜底"，文件名和宽高比两层连同 `FilenameFormatDetector`/
+  `AspectRatioFormatDetector` 极其对应测试一并删除。`ContainerProbeResult` 同步简化成只剩
+  `isMultiview: Boolean`（原来顺带带出的宽高信息不再需要）。`FormatSource` 枚举的
+  `DETECTED_FILENAME`/`DETECTED_ASPECT_RATIO` 合并成一个 `DETECTED_METADATA`。
+- **`VideoGridCard` 去掉格式标签**：删掉缩略图左上角的投影/立体 `Badge` 整块，时长标签（右下角）和
+  "识别方式 · 文件大小"说明文字原样保留。
+
+### 执行过程中的一处流程记录：Task 1 的测试自己写错了，被 implementer 自己发现
+
+Task 1 的 haiku 级 implementer 报了 `DONE_WITH_CONCERNS`：它为了让自己写的两条 `findPath` 测试通过，
+把 `findPath` 的契约改成了"自动读取 `rangeStart` 处的一个 box 头再往下钻"。控制器（我）没有直接采信这个
+改动，而是先核对了 Task 2（当时还没实现，但计划里已经写死代码）对 `findPath` 的调用方式——`findPath(source,
+trak.payloadStart, trak.end, HDLR_PATH)`，传的就是**已经找到的 box 的 payload 区间**，不是"另一个 box 的
+起始位置"。真正的错误在测试本身：两条测试拿一个 box 的完整字节（含它自己的头）当 payload 区间传了进去。
+修复方式是把 `findPath` 的实现改回原样，只改测试（先定位外层 box 的头，再传它的 `payloadStart`/`end`）。
+这条记录的意义：**subagent 报的"我为了让测试过顺手改了一个共享函数的契约"必须先核实是函数错了还是测试
+错了，不能因为测试变绿就认为改动是对的**——尤其当这个共享函数在计划里已经写死了后续任务的调用方式时。
+
+### 验证
+
+- **可自证、已验证**：`./gradlew clean assembleDebug testDebugUnitTest` BUILD SUCCESSFUL，62/62 单测通过
+  （0 failure 0 error）。6 个任务全部 subagent 实现 + 独立 subagent 审查 approved（含一次 Task 1 的
+  `findPath` 契约修复、一次 Task 4 审查抓到的过时中文注释——都已直接修复，逐条记录在
+  `.superpowers/sdd/2026-08-17-spherical-metadata-format-detection/progress.md`）。已确认代码库里不再有
+  任何 `FilenameFormatDetector`/`AspectRatioFormatDetector`/`DETECTED_FILENAME`/`DETECTED_ASPECT_RATIO`
+  的残留引用（`grep -rn` 全代码库确认为空，Task 4 审查独立复核过一遍）。
+- **真机验证：截图这条路走不通，改用直接跑生产代码的方式验证**。把 3 个真实文件推到真机
+  （`PB311XKGL4160087B`）`/sdcard/Movies/`，`content call ... scan_file` 触发 MediaStore 扫描（避免
+  `is_pending=1` 不可见的老问题），装最新 APK 并启动，`logcat` 干净、没有任何 `FATAL`/`AndroidRuntime`/
+  探测相关的 `E`/`W` 日志。但 `pico-cli capture screenshot` 和原始 `adb shell screencap -p` 都直接报错
+  "Failed to take screenshot. Capturing failed."，`adb shell uiautomator dump` 也报 "null root node"——
+  三种途径全部确认这个沉浸态/volumetric 会话下、这台设备的 ADB 截屏与无障碍树导出都拿不到画面，是设备/
+  compositor 层面的限制，不是 pico-cli 的问题，也不是重试几次能解决的（重试过，结果一样）。改用更直接
+  的办法：临时写了一个未提交的 JVM 测试，直接对这 3 个真实文件的字节调用**跟生产代码完全同一份、已经
+  审查通过的** `SphericalStereoMetadataReader.read()`（走真实 `FileChannel`，不是 mock），验证完立刻
+  删除，没有进 git 历史。
+
+- **重要发现：`360_TB.mp4` 其实用的是旧方案（V1 `uuid`/XML），不是新方案**。这次验证之前一直假设三个
+  样本文件都带 `st3d`/`sv3d`（因为 ffprobe 的 `side_data_list` 显示 "Stereo 3D"/"Spherical Mapping"），
+  但 ffprobe 这两个抽象标签**不区分**底层到底是新方案 box 还是旧方案 `uuid`/XML。用 Python 手写脚本逐字节
+  核对了三个文件真实的 box 树结构，结果：
+
+  | 文件 | 新方案（`st3d`/`sv3d`） | 旧方案（trak 级 `uuid` + GSpherical XML） | 检测结果 | 是否正确 |
+  |---|---|---|---|---|
+  | `180-LR.mp4` | 只有 `st3d`（side-by-side），无 `sv3d` | 有一个 `uuid` box 但 UUID 全零，跟 GSpherical 无关 | `SIDE_BY_SIDE` / 投影兜底 `FLAT` | ✅ 正确（`st3d` 无 `sv3d` 是设计里写明的已知局限） |
+  | `360.mp4` | 只有 `sv3d`（等距柱状），无 `st3d` | 有：`ProjectionType=equirectangular`，`StereoMode=mono`，与新方案结论完全一致，互相印证 | `SPHERE_360` / 立体兜底 `MONO` | ✅ 正确，且被旧方案数据独立印证 |
+  | `360_TB.mp4` | **没有**——`hvc1` sample entry 里唯一的子 box 是 `hvcC`，没有 `st3d` 也没有 `sv3d` | 有：`ProjectionType=equirectangular`，`StereoMode=top-bottom` | 投影/立体都落空 → 兜底 `FLAT`/`MONO` | ⚠️ **按这次明确的方案范围是"正确"的**（旧方案本来就没做），但结果是这个文件在 App 里现在会被当成普通平面单眼视频显示，跟它真实的 360°上下 3D 内容不符 |
+
+  换句话说：用户给的 3 个"验证用"真实文件里，有 1 个（`360_TB.mp4`）实际上正好踩中了这次明确排除在外的
+  旧方案，不是假设的"全都是新方案"。这不是 bug，是设计阶段就写进"已知局限"里的取舍，但这次真机验证第一次
+  证实它不是纸面上的假设情况，而是用户手头真实素材里就存在的情况。**下一步如果要让 `360_TB.mp4` 这类文件
+  也能被正确识别，需要单独立项做旧方案（V1 `uuid`/XML）解析，这次范围明确不含。**
+
+- **没有验证到、需要用户戴设备确认的部分**：
+  1. 资源库卡片上"识别方式 · 文件大小"说明文字对这 3 个文件的实际渲染效果——检测算法本身已经通过直接跑
+     生产代码验证过，但截图和无障碍树都被设备限制挡住了，没能肉眼确认文字渲染、排版、去掉标签后的卡片
+     视觉效果。
+  2. `360_TB.mp4` 在 HUD/底部栏手动修正入口里，能否顺利被用户手动改成正确的 `SPHERE_360`/`TOP_AND_DOWN`
+     ——手动修正这条路径这次没有改动，理论上不受影响，但没有实测走一遍。
