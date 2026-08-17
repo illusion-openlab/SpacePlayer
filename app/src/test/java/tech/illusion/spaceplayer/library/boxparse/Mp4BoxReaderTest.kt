@@ -82,12 +82,16 @@ class Mp4BoxReaderTest {
 
     @Test
     fun `findPath walks multiple nested levels`() {
+        // findPath's range is a container's own payload range (what findChild/findAllChildren also
+        // take), not the container box's own bytes - so first locate trak's header, same as
+        // production callers do (see SphericalStereoMetadataReader.findFirstVideoTrak).
         val hdlr = box("hdlr", ByteArray(4) + ByteArray(4) + "vide".toByteArray(Charsets.US_ASCII) + ByteArray(12))
         val mdia = box("mdia", hdlr)
         val trak = box("trak", mdia)
         val source = ByteArraySeekableByteSource(trak)
+        val trakHeader = Mp4BoxReader.readHeaderAt(source, 0L, source.size)!!
 
-        val found = Mp4BoxReader.findPath(source, 0L, source.size, listOf("mdia", "hdlr"))
+        val found = Mp4BoxReader.findPath(source, trakHeader.payloadStart, trakHeader.end, listOf("mdia", "hdlr"))
 
         assertNotNull(found)
         assertEquals("hdlr", found!!.type)
@@ -98,8 +102,9 @@ class Mp4BoxReaderTest {
         val mdiaWithNoHdlr = box("mdia", ByteArray(0))
         val trak = box("trak", mdiaWithNoHdlr)
         val source = ByteArraySeekableByteSource(trak)
+        val trakHeader = Mp4BoxReader.readHeaderAt(source, 0L, source.size)!!
 
-        val found = Mp4BoxReader.findPath(source, 0L, source.size, listOf("mdia", "hdlr"))
+        val found = Mp4BoxReader.findPath(source, trakHeader.payloadStart, trakHeader.end, listOf("mdia", "hdlr"))
 
         assertNull(found)
     }

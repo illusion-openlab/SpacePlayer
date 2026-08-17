@@ -100,12 +100,8 @@ object Mp4BoxReader {
      * segment is missing. */
     fun findPath(source: SeekableByteSource, rangeStart: Long, rangeEnd: Long, path: List<String>): BoxHeader? {
         require(path.isNotEmpty()) { "path must not be empty" }
-
-        // If rangeStart points to a container box, read it first and search within its payload
-        val rootBox = readHeaderAt(source, rangeStart, rangeEnd) ?: return null
-        var currentStart = rootBox.payloadStart
-        var currentEnd = rootBox.end
-
+        var currentStart = rangeStart
+        var currentEnd = rangeEnd
         var found: BoxHeader? = null
         for (type in path) {
             found = findChild(source, currentStart, currentEnd, type) ?: return null
