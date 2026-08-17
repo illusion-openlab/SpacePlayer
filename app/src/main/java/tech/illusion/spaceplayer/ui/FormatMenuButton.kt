@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -82,6 +83,7 @@ fun FormatMenuButton(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
+                .heightIn(min = 44.dp)
                 .clip(shape)
                 .spatialHoverEffect()
                 .clickable(
