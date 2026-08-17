@@ -1631,3 +1631,32 @@ trak.payloadStart, trak.end, HDLR_PATH)`，传的就是**已经找到的 box 的
      视觉效果。
   2. `360_TB.mp4` 在 HUD/底部栏手动修正入口里，能否顺利被用户手动改成正确的 `SPHERE_360`/`TOP_AND_DOWN`
      ——手动修正这条路径这次没有改动，理论上不受影响，但没有实测走一遍。
+
+### 全量分支 review（opus）的两条 Important 发现——用户已确认这两条都先记录、不在这轮处理
+
+6 个任务全部 approved 之后按流程又跑了一次全量分支 review，交叉核对了这次改动跟代码库其余部分的耦合面
+（单任务 review 看不到的那种问题）。调用点、`FormatSource` 的 `when` 穷尽性、`ContainerProbeResult`
+字段读取、卡片格式标签有没有在别处重复渲染——这四项交叉检查全部干净。3 处提到"badge"的过时注释、1 处
+多余空行、以及设计稿里一条**确认为事实错误**的表述（见下）已经直接修复（commit `3996b24`）。剩下两条
+Important 发现明确问过用户，两条都选了"先记录、这轮不处理"：
+
+1. **`sv3d/proj/equi` 其实有 180° 的标准化信号，这次没解析，也让"180°"筛选 chip 变成死的**。设计稿曾经
+   写"180° 半球目前没有标准化的 box 信号"——这个表述被查出是错的：`sv3d/proj/equi`
+   （`EquirectangularProjectionBox`）本身定义了 `projection_bounds_top/bottom/left/right` 四个 0.32
+   定点字段，非零裁切边界正是标准规定的表达"部分球面（比如 180°）"的方式。用 `360.mp4` 的真实
+   `sv3d/proj/equi` 字节核对过：这四个字段确实存在，只是这份素材里恰好全为零（证实这份素材确实是无裁切
+   完整 360°，不是我们没解析导致的误判）。这次设计选择是"只看 `sv3d` 是否存在，不解析内部 `proj`/`equi`
+   子结构"——后果不只是"检测不到"：任何真实存在、用非零裁切边界表达 180° 的文件，会被这次实现**确定性地**
+   误判成完整 360°。附带后果：`Projection.HEMISPHERE_180` 现在完全无法从自动识别产生（原来的文件名检测
+   是唯一能产出它的路径，已删除），资源库的"180°"筛选 chip 对任何靠自动识别的文件都会一直是空的，除非
+   用户手动改格式。设计稿和实施计划里的错误表述已经改正（commit `3996b24`），但**是否解析 `proj`/`equi`
+   裁切边界、把 180° 检测和筛选 chip 修回来，这次明确不做**，留给后续单独立项。
+2. **`FormatDetector` 现在每个视频要开两次文件，`refreshLibrary`/`refreshDownloads` 又是在主线程同步
+   调用的**——`MediaExtractor`（多视图判断）和新的 `SphericalStereoMetadataProbe`（元数据探测）各自独立
+   打开一次文件，不再像宽高比那一层能复用同一次 `MediaExtractor` 解析拿到的宽高；`refreshLibrary()`/
+   `refreshDownloads()` 是普通 `fun` 不是 `suspend fun`，直接被 `MainLibraryScreen.kt` 里好几处
+   `LaunchedEffect` 和底部栏格式修正的点击回调在主线程调用——包括"用户在底部栏点一次格式修正，就要把
+   整个资源库的每个视频重新解析一遍 box 树"这种路径。**这是放大一个已经存在的主线程阻塞 I/O 问题（
+   `MediaExtractor` 同步调用在这次改动之前就有），不是这次引入的新问题类别**，但确实让单次代价翻倍、
+   触发频率也比设计阶段设想的更高。这次明确不做（不引入 `Dispatchers.IO`/协程重构），留给后续单独的
+   性能优化 pass。
