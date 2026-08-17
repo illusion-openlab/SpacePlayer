@@ -918,7 +918,7 @@ private const val TAG = "MediaExtractorMultiviewProbe"
  * 启发式代理判断，不是精确的 MV-HEVC 识别：标准 Android `MediaExtractor`/`MediaFormat` 没有
  * 文档化的 ISO/IEC 23008-2 Annex G 多视图分组信息读取接口。这里只是数"同分辨率 HEVC 视频轨道数
  * 是否 ≥ 2"，命中就当作多视图。本机没有真实 Apple 空间视频样本文件验证过这个启发式的准确率——
- * 文件名识别（`_mvhevc`）和用户手动覆盖仍是 V1 实际可靠的兜底路径，见 AGENTS.md Stage 2 记录。
+ * 用户手动覆盖仍是实际可靠的兜底路径，见 AGENTS.md Stage 2 记录。
  */
 class MediaExtractorMultiviewProbe : MultiviewTrackProbe {
     override fun probe(context: Context, uri: Uri): ContainerProbeResult {
@@ -953,6 +953,8 @@ class MediaExtractorMultiviewProbe : MultiviewTrackProbe {
     }
 }
 ```
+
+**Note (recorded after Task 4's task review flagged it):** the doc comment above previously still said "文件名识别（`_mvhevc`）和用户手动覆盖仍是 V1 实际可靠的兜底路径" (filename detection remains a reliable fallback) — stale, since this same task deletes `FilenameFormatDetector.kt`, the only place that filename-based `_mvhevc` detection existed. The version above is corrected (filename-detection clause removed). Fixed post-implementation in commit `c60432b`.
 
 - [ ] **Step 2: Simplify `FakeMultiviewTrackProbe`**
 
