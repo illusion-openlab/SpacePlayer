@@ -50,7 +50,6 @@ import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import com.pico.spatial.ui.design.Button
 import com.pico.spatial.ui.design.ButtonDefaults
-import com.pico.spatial.ui.design.ChipsDefaults
 import com.pico.spatial.ui.design.Icon
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.ScrollIndicator
@@ -58,7 +57,6 @@ import com.pico.spatial.ui.design.SideNavigation
 import com.pico.spatial.ui.design.SideNavigationItem
 import com.pico.spatial.ui.design.SideNavigationItemDefaults
 import com.pico.spatial.ui.design.Text
-import com.pico.spatial.ui.design.ToggleableChip
 import com.pico.spatial.ui.design.windows.AlertDialog
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
@@ -359,12 +357,10 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                 }
 
                 Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                    val filterChipColors = ChipsDefaults.toggleableChipColors(
-                        contentColor = SpacePlayerTextPrimary,
-                        backgroundColor = SpacePlayerSurface,
-                        activeContentColor = SpacePlayerOnAccent,
-                        activeBackgroundColor = SpacePlayerAccent,
-                    )
+                    // The format-filter chip row (全部 + one chip per Projection) that used to live
+                    // here has been removed per user request. libraryViewModel.formatFilter/
+                    // selectFormatFilter() are left in place - formatFilter now always stays null,
+                    // so LibraryViewModel.visibleItems()'s filter branch is unreachable but harmless.
                     Row(
                         modifier = Modifier.fillMaxWidth().height(HEADER_ROW_HEIGHT),
                         verticalAlignment = Alignment.Bottom,
@@ -374,25 +370,6 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                             color = SpacePlayerTextPrimary,
                             style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp),
                         )
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        ToggleableChip(
-                            label = { Text(stringResource(R.string.library_filter_all)) },
-                            isToggleOn = libraryViewModel.formatFilter == null,
-                            onClick = { libraryViewModel.selectFormatFilter(null) },
-                            colors = filterChipColors,
-                            modifier = Modifier.padding(start = 16.dp),
-                        )
-                        Projection.entries.forEach { candidate ->
-                            ToggleableChip(
-                                label = { Text(candidate.label()) },
-                                isToggleOn = libraryViewModel.formatFilter == candidate,
-                                onClick = { libraryViewModel.selectFormatFilter(candidate) },
-                                colors = filterChipColors,
-                                modifier = Modifier.padding(start = 8.dp),
-                            )
-                        }
                     }
 
                     val historyItems = historyStore.recentEntriesDescending().mapNotNull { (uriKey, _) ->
