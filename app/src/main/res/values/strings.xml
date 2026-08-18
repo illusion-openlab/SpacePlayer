@@ -23,6 +23,8 @@
     <string name="library_imported_video_default_name">Imported video</string>
     <string name="library_permission_rationale">SpacePlayer needs access to your local videos to show the library</string>
     <string name="library_grant_permission">Grant access</string>
+    <string name="library_permission_open_settings">Open system settings</string>
+    <string name="library_permission_saf_hint">If the button above does nothing, access was permanently denied — grant it in system settings. You can also open videos one at a time with “Other · Choose file” in the bottom left; that needs no permission.</string>
     <string name="library_filter_all">All</string>
     <string name="library_start_playback">Start playback</string>
 

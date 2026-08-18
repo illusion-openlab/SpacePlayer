@@ -1743,3 +1743,90 @@ HUD 里格式按钮变大本身对 VR 点击也是好事，只是跟旁边 chip 
 
   以上 5 项需要用户实际戴上设备、用真实指向输入（控制器/手势）逐个试一遍——真机当时没有连接，无法在
   这次会话里补测。
+
+## 2026-08-18 续：授权页重做——去掉灰色玻璃底、加系统设置逃生通道、修好"授权后界面不刷新"和"SAF 选的文件没法播"
+
+用户报了三件事：(1) 什么情况下才需要文件库授权？(2) 授权卡片太难看，要去掉背景色；(3) **点"去授权"没有任何反应**。
+第 3 条按 systematic-debugging 走了完整的根因调查（4 路并行 + 综合，见下），结论是**没有复现出用户报的现象，
+根因未证实**，但调查过程排除了所有结构性解释，并且顺带查出两个真实的、独立于该现象的 bug，这次一并修了。
+
+### 调查结论：这条链路本身是好的（已实证）
+
+- `SpatialLaunchActivity : SpatialStubActivity : FragmentActivity`，容器内容通过标准
+  `androidx.activity.compose.setContent` 挂载，所以 `LocalActivityResultRegistryOwner` 正常解析。
+  PICO SDK 0.13.3 全量源码 + 字节码里 `ActivityResultRegistry`/`requestPermissions`/`checkSelfPermission`
+  **零引用**——SDK 既没有覆盖也没有破坏 androidx 的机制，而且它自己**不提供**任何权限 API（别去找）。
+- **决定性证据**：在模拟器上用 `adb shell input tap` 点中"去授权"，3/3 次都真的拉起了系统权限弹窗
+  （`ActivityTaskManager: START ... REQUEST_PERMISSIONS cmp=com.android.permissioncontroller/
+  .permission.ui.pico.PicoGrantPermissionsActivity` → `PromptSDK: show success`），截图里能看到
+  允许/不允许对话框正常盖在 app 面板上。所以"Compose onClick → launcher → 系统弹窗"是通的，2D 系统 UI
+  也能正常合成在 spatial WindowContainer 之上。
+- PICO 官方 sample 用的就是逐字相同的 `rememberLauncherForActivityResult(ActivityResultContracts
+  .RequestPermission())` 写法，官方眼动文档也直接把运行时权限指向 Android 官方文档 + `ActivityCompat
+  .requestPermissions`。所以"用错 API"这个方向被排除，也不存在 PICO 特供的替代方案。
+
+### 最可能的解释（未证实，需要用户在真机上配合一次日志才能定论）
+
+**权限被永久拒绝（USER_FIXED）**：targetSdk 35 下，一旦用户拒绝过两次，`launch()` 会启动
+GrantPermissionsActivity 然后立刻结束返回拒绝——**不显示任何弹窗、回调 granted=false、界面零变化**，
+和"点了没反应"完全吻合，而且跟架构无关。模拟器上之所以能弹出来，正是因为那边 flags 干净（没有 USER_FIXED）。
+关键背景：这次排查中途发现真机上 app **已被卸载**（第一次 dumpsys 还是 granted=true，20 分钟后就变成
+"Package not installed"），全新安装 + 反复拒绝正好会走到 USER_FIXED。
+**这一条是唯一能从 app 内部彻底走不通的情况，所以这次加了系统设置逃生通道。**
+
+### 改动
+
+- **去掉授权卡片的灰色底**：原来用的是 `.backgroundMaterial(true, Material.Regular)`（照抄
+  `LoadingErrorAttachment`/`SubtitleAttachment`）。那两个组件活在沉浸 Stage 上，后面有真实内容可供玻璃
+  材质采样；而主窗口设了 `pico.spatial.windowcontainer.materialbackground="0"` 并自绘不透明底，玻璃没有
+  东西可模糊，就退化成一块死灰色板子。现在直接是文字+按钮画在窗口自己的暖白底上。
+- **`hasVideoPermission` 改成随时向系统复核，不再只在 composition 时取一次快照**：新增局部函数
+  `readVideoPermission()`，launcher 回调改成 `granted || readVideoPermission()`，并加了一个
+  `DisposableEffect` + `LifecycleEventObserver` 在每次 `ON_RESUME` 时重新读取。
+  **这修的是一个之前记录过、确实复现过的 bug**（见 plans/2026-08-06-stage2-video-library.md:1764：
+  `dumpsys` 显示 granted=true 但"App 自己的 Compose 状态没有响应"）——权限在 app 进程之外被授予
+  （系统设置里开、或开发时 `pm grant`）时，旧写法会永远停在授权页。`androidx.lifecycle.compose
+  .LocalLifecycleOwner` 通过 PICO 自己 fork 的 compose-ui 传递，app 侧不需要额外声明 lifecycle 依赖
+  （实测编译通过）。
+- **加"打开系统设置"按钮**：`Settings.ACTION_APPLICATION_DETAILS_SETTINGS` + `Uri.fromParts("package", ...)`。
+  实测在这个 PICO 版本上能正常解析并以 spatial 面板打开应用信息页。**注意反面结论：
+  `ACTION_MANAGE_APP_PERMISSIONS` 在这个版本上解析不了（`Activity not started, unable to resolve Intent`），
+  别用。** 配合上面的 ON_RESUME 复核，从设置页授权完回来界面会自动刷新。
+- **把 `LibraryBottomBar` 移出 `if (hasVideoPermission)` 分支**：这是调查里查出的另一个真实 bug。
+  "其它 · 选择文件"走的是 SAF（`OpenDocument` + `takePersistableUriPermission`），**完全不需要运行时权限**，
+  而且侧边栏一直可见、点了确实能选到文件、`selectItem()` 确实执行了——但底部栏（承载"开始播放"、格式修正、
+  字幕入口）原来在权限分支里面，导致没授权时选完文件**界面上什么都不会发生，选的文件根本没法播**。
+  这多半也是"点什么都没反应"整体印象的一部分。现在底部栏只要 `selectedItem != null` 就渲染。
+- 授权页补了一句说明文案：点"去授权"没反应 = 已被永久拒绝、只能去系统设置；以及不授权也能用
+  "其它 · 选择文件"逐个打开视频。
+
+### 什么情况下需要这个权限（回答用户的问题）
+
+**需要**（`READ_MEDIA_VIDEO` 只用于让 app 去*枚举*用户没有亲手交给它的视频）：
+- `VideoLibraryRepository.query()` 对 `MediaStore.Video.Media.EXTERNAL_CONTENT_URI` 的扫描——这是
+  "视频资源库"和"下载"两个网格的**唯一**数据来源。
+- "历史"——历史记录存的是 URI 字符串，要靠匹配 `libraryItems + downloadsItems` 才能还原，所以没权限时
+  历史列表是空的（记录本身没丢）。
+- `SubtitleDiscovery` 自动找同名 `.srt`（查 `MediaStore.Video.Media.DATA`）。只影响自动发现，不影响手动选字幕。
+
+**不需要**（SAF 按文件授权，用户自己选的那一个文件）：
+- "其它 · 选择文件"、手动选字幕、播放 SAF 选中的视频、沉浸 Stage、格式识别、所有偏好/历史的持久化。
+
+也就是说**理论上可以完全不授权地使用整个 app**，只是失去自动列表、下载列表、历史和字幕自动匹配。
+（在这次修复之前，实际上做不到——见上面 `LibraryBottomBar` 那条。）
+
+### 验证状态
+
+- **已实测（模拟器 emulator-5554，均有日志/截图/uiautomator 证据）**：`clean assembleDebug
+  testDebugUnitTest` BUILD SUCCESSFUL；授权卡片灰底已消失（截图）；"去授权"能拉起系统权限弹窗（logcat）；
+  "打开系统设置"能打开应用信息页（logcat 显示 `com.android.settings/.applications.InstalledAppDetails`
+  由 `callerPkg=tech.illusion.spaceplayer` 拉起）；**ON_RESUME 复核修复决定性验证通过**——进程不重启
+  （pid 5689 全程不变）的前提下用 `pm grant` 从外部授权，切后台再回来，授权页自动消失、视频网格正常出现。
+  另外 `uiautomator dump` 顺带验证了 8-18 上一轮的侧边栏修复：导航项实测 128px 高（=64dp，全部可点），
+  相邻两项之间有真实 16px（=8dp）间隙。
+- **未验证**：真机（当时 app 已被卸载，没有重装去打扰用户的设备）；真实手柄射线点击（所有点击都是
+  `adb input tap` 合成事件）；SAF 选文件后底部栏出现并能播放这条完整链路（改动结构上正确，但没实际走一遍）。
+- **如果真机上"去授权"仍然没反应**，请按这个顺序抓一次日志定论：
+  `adb shell dumpsys package tech.illusion.spaceplayer | grep -A3 READ_MEDIA_VIDEO` 看有没有 `USER_FIXED`；
+  然后 `adb logcat -c` 后点一次，`adb logcat | grep -E "REQUEST_PERMISSIONS|PromptSDK"`。
+  完全没有 START 行 = 点击没送达；有 START 但没 `show success` 且带 USER_FIXED = 永久拒绝（用"打开系统设置"）。

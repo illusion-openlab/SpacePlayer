@@ -3,6 +3,8 @@ package tech.illusion.spaceplayer.ui.library
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.LocalIndication
@@ -28,6 +30,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +52,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.pico.spatial.ui.design.Button
 import com.pico.spatial.ui.design.ButtonDefaults
 import com.pico.spatial.ui.design.Icon
@@ -60,8 +66,6 @@ import com.pico.spatial.ui.design.SideNavigationItemDefaults
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
-import com.pico.spatial.ui.foundation.material.backgroundMaterial
-import com.pico.spatial.ui.platform.Material
 import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
 import com.pico.spatial.ui.platform.containers.StageStyle
 import kotlinx.coroutines.launch
@@ -173,17 +177,33 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    var hasVideoPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_MEDIA_VIDEO,
-            ) == PackageManager.PERMISSION_GRANTED,
-        )
-    }
+    // Always re-read from the system rather than trusting a single snapshot taken at composition:
+    // the permission can be granted from OUTSIDE this composition (the system-settings escape
+    // hatch below, or `pm grant` during development) while this process keeps running, and a
+    // remembered-once value would then stay stale forever - the gate would keep showing a library
+    // that is actually readable.
+    fun readVideoPermission(): Boolean = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.READ_MEDIA_VIDEO,
+    ) == PackageManager.PERMISSION_GRANTED
+
+    var hasVideoPermission by remember { mutableStateOf(readVideoPermission()) }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
-    ) { granted -> hasVideoPermission = granted }
+    ) { granted -> hasVideoPermission = granted || readVideoPermission() }
+
+    // Re-check on every resume so returning from the system-settings page picks the grant up.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasVideoPermission = readVideoPermission()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(hasVideoPermission) {
         if (hasVideoPermission) {
@@ -394,44 +414,20 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                             }
                             ScrollIndicator(state = gridState)
                         }
-
-                        Box(modifier = Modifier.fillMaxWidth().height(FOOTER_HEIGHT)) {
-                            if (libraryViewModel.selectedItem != null) {
-                                LibraryBottomBar(
-                                    selectedItem = libraryViewModel.selectedItem,
-                                    selectedEnvironment = selectedEnvironment,
-                                    onSelectEnvironment = { selectedEnvironment = it },
-                                    onFormatChange = { projection, stereoMode ->
-                                        val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
-                                        libraryViewModel.preferencesStore.setFormatOverride(item.uri, projection, stereoMode)
-                                        libraryViewModel.refreshLibrary()
-                                        libraryViewModel.refreshDownloads()
-                                        (libraryViewModel.libraryItems + libraryViewModel.downloadsItems)
-                                            .find { it.uri == item.uri }
-                                            ?.let { libraryViewModel.selectItem(it) }
-                                    },
-                                    onPickSubtitle = { subtitleLauncher.launch(arrayOf("*/*")) },
-                                    onStartPlayback = {
-                                        val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
-                                        val itemToPlay = if (item.projection == Projection.FLAT) {
-                                            item.copy(preferredEnvironment = item.preferredEnvironment ?: selectedEnvironment)
-                                        } else {
-                                            item
-                                        }
-                                        playbackViewModel.startPlayback(itemToPlay)
-                                        coroutineScope.launch { navigator.openStage(IMMERSIVE_STAGE_ID, style = StageStyle.Full) }
-                                    },
-                                )
-                            }
-                        }
                     } else {
                         // The app's frame (sidebar, category title above) stays visible per user
                         // request - only this content area, where the grid would normally sit,
-                        // swaps to the permission rationale + grant button. Styled as an inline
-                        // glass card (same backgroundMaterial(Material.Regular) pattern as
-                        // LoadingErrorAttachment/SubtitleAttachment) rather than a modal AlertDialog,
-                        // since a modal would dim/cover the sidebar this change is meant to keep
-                        // visible.
+                        // swaps to the permission rationale + grant button.
+                        //
+                        // Deliberately NO background of its own: an earlier version used
+                        // .backgroundMaterial(true, Material.Regular) here (copying
+                        // LoadingErrorAttachment/SubtitleAttachment), but those two live on the
+                        // immersive Stage where there is real content behind them for the glass to
+                        // sample. This window sets pico.spatial.windowcontainer.materialbackground="0"
+                        // and paints its own opaque root, so the glass had nothing to blur and
+                        // rendered as a flat grey slab on the warm-white background. Plain text +
+                        // button directly on the window background is what this screen actually
+                        // wants.
                         Box(
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp).weight(1f),
                             contentAlignment = Alignment.Center,
@@ -439,8 +435,6 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                             Column(
                                 modifier = Modifier
                                     .widthIn(max = 480.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .backgroundMaterial(true, Material.Regular)
                                     .padding(32.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
@@ -449,21 +443,96 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                     color = SpacePlayerTextPrimary,
                                     style = PicoTheme.typography.titleLarge.copy(fontSize = 20.sp),
                                 )
-                                Button(
-                                    onClick = { permissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO) },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = SpacePlayerAccent,
-                                        contentColor = SpacePlayerOnAccent,
-                                    ),
+                                Row(
                                     modifier = Modifier.padding(top = 24.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                                 ) {
-                                    Text(
-                                        text = stringResource(R.string.library_grant_permission),
-                                        color = SpacePlayerOnAccent,
-                                        style = PicoTheme.typography.titleLarge.copy(fontSize = 18.sp),
-                                    )
+                                    Button(
+                                        onClick = { permissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO) },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = SpacePlayerAccent,
+                                            contentColor = SpacePlayerOnAccent,
+                                        ),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.library_grant_permission),
+                                            color = SpacePlayerOnAccent,
+                                            style = PicoTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                                        )
+                                    }
+                                    // Mandatory escape hatch, not a nicety: once the user has denied
+                                    // this permission twice Android marks it USER_FIXED and
+                                    // permissionLauncher.launch() becomes a guaranteed silent no-op -
+                                    // no dialog, no callback change, no way out from inside the app.
+                                    // ACTION_APPLICATION_DETAILS_SETTINGS is verified to resolve and
+                                    // render as a spatial panel on this PICO build (unlike
+                                    // ACTION_MANAGE_APP_PERMISSIONS, which does not resolve here).
+                                    // The ON_RESUME re-check above picks the grant up on return.
+                                    Button(
+                                        onClick = {
+                                            context.startActivity(
+                                                Intent(
+                                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                    Uri.fromParts("package", context.packageName, null),
+                                                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                            )
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = SpacePlayerSurface,
+                                            contentColor = SpacePlayerTextPrimary,
+                                        ),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.library_permission_open_settings),
+                                            color = SpacePlayerTextPrimary,
+                                            style = PicoTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                                        )
+                                    }
                                 }
+                                Text(
+                                    text = stringResource(R.string.library_permission_saf_hint),
+                                    color = SpacePlayerTextSecondary,
+                                    style = PicoTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                                    modifier = Modifier.padding(top = 20.dp),
+                                )
                             }
+                        }
+                    }
+
+                    // Outside the hasVideoPermission branch on purpose: "其它 · 选择文件" uses SAF
+                    // (OpenDocument + takePersistableUriPermission), which grants per-file read
+                    // access without any runtime permission. Previously this bar lived inside the
+                    // granted branch, so a video picked that way was selected in the ViewModel but
+                    // had no visible controls and could never be played - the pick silently went
+                    // nowhere. The permission gate only ever needs to hide the MediaStore-derived
+                    // grid, never the controls for an item the user handed us directly.
+                    Box(modifier = Modifier.fillMaxWidth().height(FOOTER_HEIGHT)) {
+                        if (libraryViewModel.selectedItem != null) {
+                            LibraryBottomBar(
+                                selectedItem = libraryViewModel.selectedItem,
+                                selectedEnvironment = selectedEnvironment,
+                                onSelectEnvironment = { selectedEnvironment = it },
+                                onFormatChange = { projection, stereoMode ->
+                                    val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
+                                    libraryViewModel.preferencesStore.setFormatOverride(item.uri, projection, stereoMode)
+                                    libraryViewModel.refreshLibrary()
+                                    libraryViewModel.refreshDownloads()
+                                    (libraryViewModel.libraryItems + libraryViewModel.downloadsItems)
+                                        .find { it.uri == item.uri }
+                                        ?.let { libraryViewModel.selectItem(it) }
+                                },
+                                onPickSubtitle = { subtitleLauncher.launch(arrayOf("*/*")) },
+                                onStartPlayback = {
+                                    val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
+                                    val itemToPlay = if (item.projection == Projection.FLAT) {
+                                        item.copy(preferredEnvironment = item.preferredEnvironment ?: selectedEnvironment)
+                                    } else {
+                                        item
+                                    }
+                                    playbackViewModel.startPlayback(itemToPlay)
+                                    coroutineScope.launch { navigator.openStage(IMMERSIVE_STAGE_ID, style = StageStyle.Full) }
+                                },
+                            )
                         }
                     }
                 }
