@@ -10,7 +10,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import com.pico.spatial.core.ecs.TransformComponent
-import com.pico.spatial.core.math.EulerAngles
 import com.pico.spatial.core.math.Vector3
 import com.pico.spatial.tracking.hand.HandJoint
 import com.pico.spatial.ui.design.PicoTheme
@@ -181,7 +180,25 @@ fun ImmersiveScene() {
                 }
                 subtitleEntity?.enabled =
                     !viewModel.showLoadingOverlay && viewModel.currentSubtitleText.isNotEmpty()
-                attachments.entity(HUD_ATTACHMENT_ID)?.enabled =
+
+                val hudEntity = attachments.entity(HUD_ATTACHMENT_ID)
+                // Orient the HUD from the live HMD pose instead of a hardcoded pitch. Setting the
+                // rotation once inside `initial` (next to this panel's setPosition) had no
+                // observable effect: on device the top edge leaned toward the user at pitch = -22f
+                // AND at +22f, and two opposite X rotations cannot look identical - so both reports
+                // were the same untouched default orientation, and each "sign fix" changed nothing.
+                //
+                // setQuaternion(pose.rotation) is exactly what applySubtitleFollow() does, and the
+                // subtitle panel has always faced the user correctly - so this reuses a convention
+                // already proven on device rather than guessing which local axis this quad type
+                // treats as front. Rotation only; position stays the fixed one set in `initial`.
+                if (hudEntity != null && hmdPose != null) {
+                    hudEntity.components[TransformComponent::class.java]?.apply {
+                        val parent = hudEntity.getParent()
+                        setQuaternion(parent?.convertRotationFrom(hmdPose.rotation, null) ?: hmdPose.rotation)
+                    }
+                }
+                hudEntity?.enabled =
                     !viewModel.showLoadingOverlay && viewModel.isHudVisible
             }
         }
@@ -244,32 +261,22 @@ fun ImmersiveScene() {
                 attachments.entity(HUD_ATTACHMENT_ID)?.apply {
                     components[TransformComponent::class.java]?.apply {
                         setPosition(Vector3(0f, 0.9f, -1.5f))
-                        // Tilted back so the panel faces more toward the user's downward gaze -
-                        // EulerAngles fields are DEGREES, not radians (confirmed by decompiling
-                        // foundation-0.13.3-sources.jar's EulerAngles.toQuat(), which does its own
-                        // `* (PI / 180.0)` conversion internally).
+                        // Rotation is deliberately NOT set here - see the frame loop above, which
+                        // orients this panel toward the live HMD pose every frame. Setting it here
+                        // (the previous approach) had no observable effect at all: on device the
+                        // panel's top edge leaned toward the user at pitch = -22f AND at pitch =
+                        // +22f, which two opposite X rotations cannot both produce. Both "wrong
+                        // sign" reports were really the same untouched default orientation, which
+                        // is why flipping the sign twice never changed anything.
                         //
-                        // The SIGN of pitch was guessed wrong twice in a row from pure math/SDK-doc
-                        // derivation (+22f, then -22f "derived" via the right-hand rule + this
-                        // project's -Z-forward precedent in SubtitleFollowComponent.kt) - both were
-                        // declared correct before ever being installed on a real headset, and both
-                        // read backwards once actually tested (-22f made the top edge lean forward
-                        // toward the user instead of receding back). The SDK's native rendering path
-                        // for an AttachmentPanel's content quad (android.view.ViewLink/ViewAttachment)
-                        // has no available source, so which local axis this specific quad type treats
-                        // as "front" could not be confirmed from the SDK - the generic LookAtComponent
-                        // doc's "+Z is front" convention does not necessarily carry over to this
-                        // component. pitch = +22f below is set from direct on-device observation
-                        // (confirmed backwards at -22f, flipped), not re-derived from math.
-                        //
-                        // Do not re-derive this sign from math a third time if it's still wrong -
-                        // that method has now failed twice. If +22f is also wrong, describe exactly
-                        // what's wrong (leaning the wrong way vs. not facing the user at all/mirrored)
-                        // and consider replacing this static angle with the SDK's own
-                        // LookAtComponent targeting the live HMD position (see StoryPico's
-                        // PlayerSpace.kt lookAtQuat() for a working precedent) - that self-corrects
-                        // for whichever axis the SDK actually treats as front instead of guessing.
-                        setEulerAngles(EulerAngles(pitch = 22f, yaw = 0f, roll = 0f))
+                        // The old approach set EulerAngles(pitch = ±22f) right here, and the sign
+                        // was "fixed" twice (once by derivation, once by on-device observation)
+                        // without ever changing what the user saw. Rather than guess a third time,
+                        // the panel now derives its orientation from the live HMD pose using the
+                        // exact call that already works for the subtitle panel - so it self-corrects
+                        // for whichever local axis this quad type actually treats as front, a fact
+                        // that could never be confirmed from the SDK (the native
+                        // android.view.ViewLink/ViewAttachment path has no available source).
                     }
                     content.addEntity(this)
                 }

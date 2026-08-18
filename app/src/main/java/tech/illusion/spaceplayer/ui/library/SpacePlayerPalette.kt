@@ -19,6 +19,7 @@ val SpacePlayerBorder = Color(0xFFEEEAE0).withVibrant(Vibrant.None) // design-st
 val SpacePlayerTextPrimary = Color(0xFF1A1A1A).withVibrant(Vibrant.None) // design-style: fixed-figma-color text primary
 val SpacePlayerTextSecondary = Color(0xFF5C5347).withVibrant(Vibrant.None) // design-style: fixed-figma-color text secondary
 val SpacePlayerTextTertiary = Color(0xFF8C8275).withVibrant(Vibrant.None) // design-style: fixed-figma-color text tertiary
+val SpacePlayerTextDisabled = Color(0xFFBDB6AB).withVibrant(Vibrant.None) // design-style: fixed-figma-color text disabled (sidebar locked pre-permission)
 val SpacePlayerAccent = Color(0xFFE63946).withVibrant(Vibrant.None) // design-style: fixed-figma-color accent
 val SpacePlayerOnAccent = Color(0xFFFFFFFF).withVibrant(Vibrant.None) // design-style: fixed-figma-color on-accent text
 val SpacePlayerThumbnailPlaceholder = Color(0xFFF1EEE6).withVibrant(Vibrant.None) // design-style: fixed-figma-color thumbnail placeholder

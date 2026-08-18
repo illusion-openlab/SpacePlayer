@@ -1830,3 +1830,48 @@ GrantPermissionsActivity 然后立刻结束返回拒绝——**不显示任何�
   `adb shell dumpsys package tech.illusion.spaceplayer | grep -A3 READ_MEDIA_VIDEO` 看有没有 `USER_FIXED`；
   然后 `adb logcat -c` 后点一次，`adb logcat | grep -E "REQUEST_PERMISSIONS|PromptSDK"`。
   完全没有 START 行 = 点击没送达；有 START 但没 `show success` 且带 USER_FIXED = 永久拒绝（用"打开系统设置"）。
+
+## 2026-08-18 续二：授权页放大/侧边栏加锁/隐藏主题模式，以及 HUD 倾斜"符号错了两次"的真正根因
+
+用户四条反馈：授权文字太小、只有授权后才可点侧边栏、隐藏主题模式（主窗口+播放控制栏）、播放控制栏倾斜方向反了。
+
+- **授权页整体放大**：说明文字 20→30sp，两个按钮 18→22sp，补充说明 14→18sp，卡片最大宽度 480→720dp
+  （不加宽的话放大后的说明会挤成三行）。
+- **侧边栏未授权时整体加锁**（用户明确选择"整个侧边栏全部禁用"）：分类项和"其它 · 选择文件"在
+  `hasVideoPermission == false` 时同时去掉 `spatialHoverEffect` 和 `clickable`（两者一起去，避免"有悬停反馈
+  但点了没反应"的假象），并用新增的 `SpacePlayerTextDisabled` 置灰。**代价要知道**：SAF 那条路本身不需要
+  权限，锁上之后权限被永久拒绝的用户就只剩授权页的"打开系统设置"一条路了，代码注释里写明了这一点。
+- **隐藏主题模式**：`LibraryBottomBar` 和 `PlaybackHud` 里的环境 chips（影院/星空/海边）连同它们的分隔线
+  一起移除；`currentEnvironment`/`onSelectEnvironment` 参数和状态保留，值仍然驱动平面视频的背景环境，
+  只是没有了选择 UI，要恢复就是把这段 UI 放回去，不用重新接线。顺带清掉了因此变成死代码的 import 和
+  两个只给 chip 用的颜色常量。
+
+### HUD 倾斜：不是符号错了两次，是这个旋转根本没生效
+
+这是这个问题第三次被报。关键证据是**用户这次说 `pitch = +22f` 时"顶部朝我倒过来"，而 git 记录
+（commit `28bffaf` 的提交信息，第一手装机观察）写的是 `-22f` 时"panel's top edge lean toward the user"**
+——两个相反的 X 轴旋转不可能看起来一模一样。所以两次"符号不对"看到的其实都是**同一个没被改动过的默认朝向**，
+每次翻符号都等于什么都没做，这也解释了为什么"改了还是反的"。
+
+对比同一个文件里**确实有效**的字幕面板就能看出差别：字幕的旋转是在每帧循环里、实体已经加进场景之后，
+用 `transform.setQuaternion(pose.rotation)` 设的（`applySubtitleFollow`），而且字幕朝向从来没被投诉过；
+HUD 的旋转则是在 `initial { }` 里、`content.addEntity(this)` 前后设一次就不管了。
+
+修法：不再写死角度，改成在每帧循环里用**跟字幕完全相同的那一行调用**从实时 HMD 姿态取朝向
+（`setQuaternion(parent?.convertRotationFrom(hmdPose.rotation, null) ?: hmdPose.rotation)`），只改旋转、
+位置仍用 `initial` 里那个固定值。这样就绕开了"这个 quad 到底哪个局部轴算正面"这个从 SDK 源码里根本查不到的
+问题（原生 `android.view.ViewLink`/`ViewAttachment` 没有可反编译的源码），复用的是本项目已经在真机上验证过的
+约定，而不是第三次去猜符号。`EulerAngles` import 随之删除。
+
+### 验证状态
+
+- **已实测（模拟器 emulator-5554）**：`clean assembleDebug testDebugUnitTest` BUILD SUCCESSFUL。授权页放大后的
+  排版、侧边栏置灰、底部栏环境 chips 消失均已截图确认。用 `uiautomator dump` + `input tap` 完整走通了
+  "选中视频卡 → 点开始播放 → 进入沉浸 Stage"，`opening stage ImmersiveStage` 有日志、无 FATAL、进程存活。
+  顺带澄清一个虚惊：`uiautomator` 对"字幕：未设置"和"开始播放"两个节点报 `[0,0][0,0]`，一度以为底部栏溢出把
+  主按钮挤没了，截图核对后确认**没有溢出**（主窗口容器实际是 2800×1720px = 1400dp 宽，不是 `wm size` 报的
+  2160px），是 uiautomator 没解析出这两个节点的 bounds 而已。
+- **未验证（重要）**：模拟器没有真实头显姿态，`hmdPose` 很可能一直是 null，那样这段新代码不会执行——所以
+  这次只证明了"不崩、不回归"，**没有证明 HUD 朝向真的修好了**。需要戴设备进沉浸播放看一眼：正常的话面板应该
+  始终正对你（低头看它时自动仰起来），而不是固定倾斜。如果戴上看仍然不对，请描述"是完全不朝向我/镜像"还是
+  "跟着头转得太灵敏"，这两种对应的修法完全不同。

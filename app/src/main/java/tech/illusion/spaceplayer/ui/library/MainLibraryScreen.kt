@@ -299,9 +299,19 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                 SideNavigationItem(
                                     selected = libraryViewModel.selectedCategory == category,
                                     colors = SideNavigationItemDefaults.colors(
-                                        unselectedContentColor = SpacePlayerTextSecondary,
+                                        // Dimmed while locked so "not clickable yet" is visible,
+                                        // not just silently inert.
+                                        unselectedContentColor = if (hasVideoPermission) {
+                                            SpacePlayerTextSecondary
+                                        } else {
+                                            SpacePlayerTextDisabled
+                                        },
                                         unselectedContainerColor = Color.Transparent,
-                                        selectedContentColor = SpacePlayerTextPrimary,
+                                        selectedContentColor = if (hasVideoPermission) {
+                                            SpacePlayerTextPrimary
+                                        } else {
+                                            SpacePlayerTextDisabled
+                                        },
                                         selectedContainerColor = SpacePlayerSurfaceSelected,
                                     ),
                                     modifier = Modifier
@@ -314,13 +324,25 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                         // clip(shape) - the native hover then picks up the item's
                                         // rounded shape instead of a square. Same ordering rule as
                                         // VideoGridCard and FormatMenuButton.
-                                        .spatialHoverEffect(SpatialHoverStyle.Highlight)
-                                        .clickable(
-                                            interactionSource = categoryInteractionSource,
-                                            indication = LocalIndication.current,
-                                            onClick = { libraryViewModel.selectCategory(category) },
-                                        )
-                                        .controllerHapticFeedback(interactionSource = categoryInteractionSource),
+                                        //
+                                        // Locked until the permission is granted, per user request:
+                                        // both the hover affordance and the click are dropped
+                                        // together, so a locked item gives no false "this responds"
+                                        // feedback before silently doing nothing.
+                                        .then(
+                                            if (hasVideoPermission) {
+                                                Modifier
+                                                    .spatialHoverEffect(SpatialHoverStyle.Highlight)
+                                                    .clickable(
+                                                        interactionSource = categoryInteractionSource,
+                                                        indication = LocalIndication.current,
+                                                        onClick = { libraryViewModel.selectCategory(category) },
+                                                    )
+                                                    .controllerHapticFeedback(interactionSource = categoryInteractionSource)
+                                            } else {
+                                                Modifier
+                                            },
+                                        ),
                                     leading = {
                                         Icon(
                                             painter = painterResource(id = category.iconRes()),
@@ -344,6 +366,13 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                     // above, and pinned to the sidebar's bottom edge per the design mockup, rather
                     // than living in the same selectable list.
                     val importInteractionSource = remember { MutableInteractionSource() }
+                    // Locked before the permission is granted, same as the category items above,
+                    // per explicit user choice. Worth knowing if this is ever revisited: this
+                    // trigger uses SAF (OpenDocument + takePersistableUriPermission), which needs no
+                    // runtime permission at all, so locking it also removes the only in-app way to
+                    // open a video when the permission has been permanently denied - the permission
+                    // panel's "打开系统设置" button is then the sole route back.
+                    val importTint = if (hasVideoPermission) SpacePlayerAccent else SpacePlayerTextDisabled
                     Box(
                         modifier = Modifier
                             .padding(horizontal = 24.dp)
@@ -353,16 +382,23 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                             .padding(bottom = 16.dp)
                             .fillMaxWidth()
                             .height(FOOTER_HEIGHT)
-                            .dashedBorder(SpacePlayerAccent, RoundedCornerShape(12.dp))
+                            .dashedBorder(importTint, RoundedCornerShape(12.dp))
                             // dashedBorder clips first, so the native hover picks up the rounded
                             // shape; same reasoning as VideoGridCard's.
-                            .spatialHoverEffect()
-                            .clickable(
-                                interactionSource = importInteractionSource,
-                                indication = LocalIndication.current,
-                                onClick = { importLauncher.launch(arrayOf("video/*")) },
+                            .then(
+                                if (hasVideoPermission) {
+                                    Modifier
+                                        .spatialHoverEffect()
+                                        .clickable(
+                                            interactionSource = importInteractionSource,
+                                            indication = LocalIndication.current,
+                                            onClick = { importLauncher.launch(arrayOf("video/*")) },
+                                        )
+                                        .controllerHapticFeedback(interactionSource = importInteractionSource)
+                                } else {
+                                    Modifier
+                                },
                             )
-                            .controllerHapticFeedback(interactionSource = importInteractionSource)
                             .padding(horizontal = 12.dp),
                         contentAlignment = Alignment.CenterStart,
                     ) {
@@ -370,11 +406,11 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_nav_import),
                                 contentDescription = null,
-                                tint = SpacePlayerAccent,
+                                tint = importTint,
                             )
                             Text(
                                 text = stringResource(R.string.library_import_action),
-                                color = SpacePlayerAccent,
+                                color = importTint,
                                 style = PicoTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                                 modifier = Modifier.padding(start = 8.dp),
                             )
@@ -445,18 +481,20 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                         ) {
                             Column(
                                 modifier = Modifier
-                                    .widthIn(max = 480.dp)
+                                    // Widened along with the type scale below - at the old 480.dp
+                                    // the enlarged rationale wrapped to three cramped lines.
+                                    .widthIn(max = 720.dp)
                                     .padding(32.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Text(
                                     text = stringResource(R.string.library_permission_rationale),
                                     color = SpacePlayerTextPrimary,
-                                    style = PicoTheme.typography.titleLarge.copy(fontSize = 20.sp),
+                                    style = PicoTheme.typography.titleLarge.copy(fontSize = 30.sp),
                                 )
                                 Row(
-                                    modifier = Modifier.padding(top = 24.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    modifier = Modifier.padding(top = 32.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(20.dp),
                                 ) {
                                     Button(
                                         onClick = { permissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO) },
@@ -468,7 +506,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                         Text(
                                             text = stringResource(R.string.library_grant_permission),
                                             color = SpacePlayerOnAccent,
-                                            style = PicoTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                                            style = PicoTheme.typography.titleLarge.copy(fontSize = 22.sp),
                                         )
                                     }
                                     // Mandatory escape hatch, not a nicety: once the user has denied
@@ -496,15 +534,15 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                         Text(
                                             text = stringResource(R.string.library_permission_open_settings),
                                             color = SpacePlayerTextPrimary,
-                                            style = PicoTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                                            style = PicoTheme.typography.titleLarge.copy(fontSize = 22.sp),
                                         )
                                     }
                                 }
                                 Text(
                                     text = stringResource(R.string.library_permission_saf_hint),
                                     color = SpacePlayerTextSecondary,
-                                    style = PicoTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                                    modifier = Modifier.padding(top = 20.dp),
+                                    style = PicoTheme.typography.bodyMedium.copy(fontSize = 18.sp),
+                                    modifier = Modifier.padding(top = 28.dp),
                                 )
                             }
                         }

@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -26,10 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pico.spatial.ui.design.Button
 import com.pico.spatial.ui.design.ButtonDefaults
-import com.pico.spatial.ui.design.ChipsDefaults
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
-import com.pico.spatial.ui.design.ToggleableChip
 import com.pico.spatial.ui.design.menu.MenuItem
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
@@ -75,40 +71,11 @@ fun LibraryBottomBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(BAR_ITEM_GAP),
     ) {
-        if (selectedItem?.projection == Projection.FLAT) {
-            val envChipColors = ChipsDefaults.toggleableChipColors(
-                contentColor = SpacePlayerTextPrimary,
-                backgroundColor = SpacePlayerSurface,
-                activeContentColor = SpacePlayerOnAccent,
-                activeBackgroundColor = SpacePlayerAccent,
-            )
-            Environment.entries.forEach { env ->
-                ToggleableChip(
-                    label = { Text(env.label()) },
-                    isToggleOn = env == selectedEnvironment,
-                    onClick = { onSelectEnvironment(env) },
-                    leadingIcon = {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .background(env.dotColor(), CircleShape),
-                        )
-                    },
-                    colors = envChipColors,
-                    // Regular (40.dp), up from the default Small (32.dp) - the chip's own
-                    // .toggleable() already wraps its full chipSize-tall box, so growing this
-                    // tier grows the real tap target, not just the visual size.
-                    chipSize = ChipsDefaults.Regular,
-                )
-            }
-        } else if (selectedItem != null) {
-            Text(
-                text = stringResource(R.string.playback_panorama_auto_immersive),
-                color = SpacePlayerTextSecondary,
-                style = PicoTheme.typography.bodyLarge.copy(fontSize = 18.sp),
-            )
-        }
-
+        // The environment/theme chips (影院/星空/海边) that used to lead this bar are hidden per
+        // user request, along with the "全景视频自动进入沉浸" line that took their place for
+        // non-flat videos. `selectedEnvironment`/`onSelectEnvironment` stay on the signature and
+        // the value still feeds VideoItem.preferredEnvironment at playback start - only the picker
+        // UI is gone, so restoring it means putting this block back, not rewiring state.
         Spacer(modifier = Modifier.weight(1f))
 
         // 投影/立体格式各自封装成一个菜单按钮，始终显示（不再按 formatSource == DEFAULT 隐藏）——

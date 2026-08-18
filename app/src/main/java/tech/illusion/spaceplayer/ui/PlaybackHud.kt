@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,7 +24,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.pico.spatial.ui.design.ChipsDefaults
 import com.pico.spatial.ui.design.Icon
 import com.pico.spatial.ui.design.IconButton
 import com.pico.spatial.ui.design.IconButtonDefaults
@@ -35,7 +33,6 @@ import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Slider
 import com.pico.spatial.ui.design.SliderDefaults
 import com.pico.spatial.ui.design.Text
-import com.pico.spatial.ui.design.ToggleableChip
 import com.pico.spatial.ui.design.menu.MenuItem
 import com.pico.spatial.ui.foundation.material.backgroundMaterial
 import com.pico.spatial.ui.platform.Material
@@ -44,7 +41,6 @@ import tech.illusion.spaceplayer.playback.Environment
 import tech.illusion.spaceplayer.playback.PlaybackState
 import tech.illusion.spaceplayer.playback.Projection
 import tech.illusion.spaceplayer.playback.StereoMode
-import tech.illusion.spaceplayer.ui.library.dotColor
 
 // This HUD floats over the video/skybox on top of a Material.Regular glass panel whose actual
 // rendered tone (how dark/translucent it really looks) varies by device and isn't something this
@@ -69,8 +65,6 @@ private val HudPrimaryIconContent = Color(0xFFFFFFFF) // design-style: fixed-fig
 // requiring a hover - color is a visual match to a reference screenshot of the SDK's own frosted
 // glass hover tint, eyeballed rather than sourced from an API constant (SpatialHoverEffect's actual
 // tint is applied natively, not exposed as a Kotlin Color).
-private val HudAccentContainer = Color(0xCC97A8D8) // design-style: fixed-figma-color HUD active-chip fill (glass)
-private val HudAccentContent = Color(0xFFFFFFFF) // design-style: fixed-figma-color HUD active-chip content
 
 // Format-correction pills: same component as the library bottom bar's, restyled for this glass
 // panel - a barely-there fill plus a visible hairline border, so they read as "openable menus"
@@ -152,35 +146,12 @@ fun PlaybackHud(
                             ),
                         )
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    HudDivider()
-                    Spacer(modifier = Modifier.width(12.dp))
-                    if (isFlatProjection) {
-                        val envChipColors = ChipsDefaults.toggleableChipColors(
-                            contentColor = HudChipContent,
-                            backgroundColor = Color.Transparent,
-                            activeContentColor = HudAccentContent,
-                            activeBackgroundColor = HudAccentContainer,
-                        )
-                        Environment.entries.forEach { env ->
-                            ToggleableChip(
-                                label = { Text(env.label()) },
-                                isToggleOn = env == currentEnvironment,
-                                onClick = { onSelectEnvironment(env) },
-                                leadingIcon = {
-                                    Box(modifier = Modifier.size(8.dp).background(env.dotColor(), CircleShape))
-                                },
-                                colors = envChipColors,
-                                modifier = Modifier.padding(end = 6.dp),
-                            )
-                        }
-                    } else {
-                        Text(
-                            text = stringResource(R.string.playback_panorama_auto_immersive),
-                            color = HudTimeTextColor,
-                            style = PicoTheme.typography.bodyMedium,
-                        )
-                    }
+                    // The environment/theme chips (影院/星空/海边) that used to sit here behind their
+                    // own divider are hidden per user request. `currentEnvironment` /
+                    // `onSelectEnvironment` stay on this composable's signature and the value still
+                    // drives the flat-video backdrop - only the picker UI is gone, so restoring it
+                    // is a matter of putting this block back, not rewiring state. For non-flat
+                    // videos this slot only ever held an informational line, so nothing replaces it.
                     Spacer(modifier = Modifier.width(12.dp))
                     HudDivider()
                     Spacer(modifier = Modifier.width(12.dp))
