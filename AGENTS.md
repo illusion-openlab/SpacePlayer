@@ -1863,6 +1863,18 @@ HUD 的旋转则是在 `initial { }` 里、`content.addEntity(this)` 前后设�
 问题（原生 `android.view.ViewLink`/`ViewAttachment` 没有可反编译的源码），复用的是本项目已经在真机上验证过的
 约定，而不是第三次去猜符号。`EulerAngles` import 随之删除。
 
+### 续：改回固定角度（用户要求不跟随头部）
+
+上面那版"跟随 HMD 姿态"用户明确不要：播放控制栏不应该跟着朝向转，只要出现时固定向上倾斜 60 度，方便从上往下看。
+所以改成在同一个每帧循环里写一个**常量** `HUD_PITCH_DEGREES = 60f`（`EulerAngles(pitch = ...)`），
+不再读 `hmdPose`——**保留"在帧循环里赋值"这一点是关键**，因为根因就是在 `initial { }` 里设根本不生效。
+`hmdPose` 现在只剩字幕面板在用。
+
+**这个 60 度的正负号未经验证，必须说清楚**：之前所有装机观察对判断符号都是无效证据（那时旋转压根没生效，
+看到的都是同一个默认朝向）；这次也没法在本地复验，因为 HUD 是 AttachmentPanel，而**附着面板不会出现在
+模拟器/设备的合成器截图里**（截图里能看到的视频画面是 ECS 模型实体，走的是另一条渲染路径）。所以方向对不对
+只能戴设备看。**如果方向反了，把 `HUD_PITCH_DEGREES` 的符号取反即可，只此一处。**
+
 ### 验证状态
 
 - **已实测（模拟器 emulator-5554）**：`clean assembleDebug testDebugUnitTest` BUILD SUCCESSFUL。授权页放大后的

@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import com.pico.spatial.core.ecs.TransformComponent
+import com.pico.spatial.core.math.EulerAngles
 import com.pico.spatial.core.math.Vector3
 import com.pico.spatial.tracking.hand.HandJoint
 import com.pico.spatial.ui.design.PicoTheme
@@ -29,6 +30,21 @@ import tech.illusion.spaceplayer.ecs.applySubtitleFollow
 private const val LOADING_ATTACHMENT_ID = "loading"
 private const val HUD_ATTACHMENT_ID = "hud"
 private const val SUBTITLE_ATTACHMENT_ID = "subtitle"
+
+// Fixed HUD tilt, in DEGREES (EulerAngles fields are degrees, not radians - confirmed by
+// decompiling foundation-0.13.3-sources.jar's EulerAngles.toQuat(), which applies its own
+// `* (PI / 180.0)`). The panel sits below eye level and is angled face-up to be read from above,
+// looking down - 60 degrees per explicit user request.
+//
+// THE SIGN IS UNVERIFIED. Every earlier on-device observation of this angle is worthless as
+// evidence, because until this change the rotation was set inside `initial` and never took effect
+// at all (see the assignment site in the frame loop) - so neither "-22f looked wrong" nor "+22f
+// looked wrong" tells us anything about which way a sign actually tilts this panel. It could not be
+// re-checked here either: the HUD is an AttachmentPanel, and attachment panels do not appear in
+// this device's/emulator's compositor screenshots (the video screen that does show up is an ECS
+// model entity, a different render path), so there is no way to see the result without a headset.
+// If it tilts the wrong way, flipping the sign of this one constant is the whole fix.
+private const val HUD_PITCH_DEGREES = 60f
 
 @Composable
 fun ImmersiveScene() {
@@ -182,21 +198,20 @@ fun ImmersiveScene() {
                     !viewModel.showLoadingOverlay && viewModel.currentSubtitleText.isNotEmpty()
 
                 val hudEntity = attachments.entity(HUD_ATTACHMENT_ID)
-                // Orient the HUD from the live HMD pose instead of a hardcoded pitch. Setting the
-                // rotation once inside `initial` (next to this panel's setPosition) had no
-                // observable effect: on device the top edge leaned toward the user at pitch = -22f
-                // AND at +22f, and two opposite X rotations cannot look identical - so both reports
-                // were the same untouched default orientation, and each "sign fix" changed nothing.
+                // A FIXED tilt, deliberately not following the head: per user request the panel must
+                // hold one orientation while it is up, angled so it is read from above looking down.
                 //
-                // setQuaternion(pose.rotation) is exactly what applySubtitleFollow() does, and the
-                // subtitle panel has always faced the user correctly - so this reuses a convention
-                // already proven on device rather than guessing which local axis this quad type
-                // treats as front. Rotation only; position stays the fixed one set in `initial`.
-                if (hudEntity != null && hmdPose != null) {
-                    hudEntity.components[TransformComponent::class.java]?.apply {
-                        val parent = hudEntity.getParent()
-                        setQuaternion(parent?.convertRotationFrom(hmdPose.rotation, null) ?: hmdPose.rotation)
-                    }
+                // Applied here, per frame, rather than once in `initial` next to this panel's
+                // setPosition - that is the part that actually matters. A rotation set in `initial`
+                // never took effect at all: on device the top edge leaned toward the user at
+                // pitch = -22f AND at +22f, and two opposite X rotations cannot look identical, so
+                // both reports were the same untouched default orientation and each "sign fix" was
+                // a no-op. The subtitle panel, which has always been oriented correctly, likewise
+                // sets its rotation from this loop after the entity is live (applySubtitleFollow).
+                // Keep this assignment in the frame loop even though the value is constant.
+                if (hudEntity != null) {
+                    hudEntity.components[TransformComponent::class.java]
+                        ?.setEulerAngles(EulerAngles(pitch = HUD_PITCH_DEGREES, yaw = 0f, roll = 0f))
                 }
                 hudEntity?.enabled =
                     !viewModel.showLoadingOverlay && viewModel.isHudVisible
