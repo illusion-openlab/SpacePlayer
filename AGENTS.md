@@ -1663,13 +1663,16 @@ Important 发现明确问过用户，两条都选了"先记录、这轮不处理
 
 ## 2026-08-18：主面板侧边栏 + 底部栏点击区域/间距重设计
 
-用户反馈"侧边栏和底部格式按钮等不太容易点击"，要求各按钮间互相留有距离。排查发现根因不是简单的"元素太
-小"，而是一个在多处重复出现的 Compose 修饰符顺序问题：**`.padding(...)` 写在 `.clickable()`/
-`.toggleable()` 之前，会让这段 padding 被排除在可点击命中区域之外**——看起来像是两个元素之间的间隙，
-实际是从其中一个元素自己的可点击区域里挖出来的死区，不是真正保护两者不互相误触的空间。设计稿见
+用户反馈"侧边栏和底部格式按钮等不太容易点击"，要求各按钮间互相留有距离。排查时一度以为根因是同一个
+Compose 修饰符顺序问题在多处重复出现（`.padding(...)` 写在 `.clickable()`/`.toggleable()` 之前，导致
+这段 padding 被排除在可点击命中区域之外）——**这个判断只对侧边栏 `SideNavigationItem` 一处成立，全量
+分支 review 逐一核对其余元素后发现是过度泛化，具体更正见下文改动小节**。设计稿见
 `docs/superpowers/specs/2026-08-17-library-panel-touch-target-design.md`，实施计划见
 `docs/superpowers/plans/2026-08-17-library-panel-touch-target.md`，Subagent-Driven Development 执行，
-4 个任务全部 subagent 实现 + 独立 subagent 审查通过，范围明确只包含侧边栏和底部栏，视频网格卡不动。
+4 个任务全部 subagent 实现 + 独立 subagent 审查通过。**范围声明需要更正**：计划本身写的是"只包含侧边栏
+和底部栏"，但 `FormatMenuButton` 是库主界面底部栏和沉浸播放 HUD 共用的组件，这次给它加的 44.dp 最小
+高度悬而未决地影响到了 HUD，这个影响面在计划/设计稿阶段没有被发现，是全量分支 review 才抓到的，详见
+下文。
 
 ### 改动
 
@@ -1688,13 +1691,31 @@ Important 发现明确问过用户，两条都选了"先记录、这轮不处理
   边框、背景填充、44.dp 最小高度），但只是单一动作没有下拉菜单；"开始播放"按钮从默认的
   `ButtonDefaults.Regular`（48.dp）换成 `ButtonDefaults.Max`（56.dp），作为整个条里最主要的操作，
   现在的存在感不比旁边的次要控件小。整条 `Row` 加了 `horizontalArrangement = Arrangement.spacedBy(16.dp)`，
-  删掉了所有手动的逐个 `.padding(end = Ndp)`——这几处手动 padding 里，环境 chip 和两个格式菜单按钮的
-  都是加在各自 `.toggleable()`/`.clickable()` **之前**，同样是死区不是间隙；`Arrangement.spacedBy` 挂
-  在父级 `Row` 上，天然不可能被任何子元素的可点击区域吞掉或排除。
+  删掉了所有手动的逐个 `.padding(end = Ndp)`；`Arrangement.spacedBy` 挂在父级 `Row` 上，天然不可能被
+  任何子元素的可点击区域吞掉或排除，是更简单、更不容易再踩坑的写法。**更正（全量分支 review 指出，
+  之前这里的表述错了）**：环境 chip 和旧的格式菜单按钮那几处手动 padding 其实**不是**死区——两者都是
+  wrap-content（只有 `defaultMinSize` 下限，没有外层固定 `.height()`/`.size()`），padding 写在
+  `.toggleable()`/`.clickable()` 之前时，只是在完整可点击区域外面再加一段真实空间，并不会把它往里挤。
+  这次改动里唯一真正的死区 bug 是侧边栏 `SideNavigationItem`（见上面 `SIDEBAR_ITEM_GAP` 那条）——那里
+  是外层固定的 `.height()` 卡在 padding 和 `.clickable()` 中间，padding 只能从这个固定预算里往外抠，
+  这才是死区。旧字幕文字的问题也是另一件事：不是"padding 被排除"，是它可点击区域里**压根没有** padding
+  能把点击目标撑大过裸文字本身。换成 `Arrangement.spacedBy` 这个选择依然是对的（更简单、天然不受任何
+  子元素自身修饰符链影响），只是不能说这次删掉的每一处手动 padding 原来都是 bug。
 - 这次没有用到任何 PICO 官方的最小点击目标/间距数值规范——查过 `AGENTS.md` 本身、所有捆绑的
   `pico-spatial-agentic-tools` 技能参考文件、以及 PICO 官方的 `spatial-design_pico-design-guidelines.md`，
   都没有找到这类数字规范。这次用的所有尺寸（40/44/56/64.dp）都是 SpatialUI SDK 自带的现有档位
   （`ChipsDefaults`/`ButtonDefaults`），不是拍脑袋定的数字。
+
+### 全量分支 review 抓到的一处范围外影响：`FormatMenuButton` 是共享组件，这次的改动也影响了沉浸播放 HUD
+
+`FormatMenuButton`（Task 2 加了 `.heightIn(min = 44.dp)`）不只给库主界面底部栏用，`PlaybackHud.kt` 的
+沉浸播放格式修正入口（`:197`/`:212`）也在用同一个组件——这次的计划和设计稿都没有提到 HUD，写计划时只
+检查了新组件 `PillButton` 有没有别的调用点，没有反过来检查"这次要改的既有组件 `FormatMenuButton` 本身
+是不是也被别处用到"，这是本该在写计划阶段就查出来的疏漏。全量分支 review 用 `grep` 找到了这个调用点，
+并且指出一个具体、真实存在的后果：HUD 里这两个格式菜单胶囊现在是 44.dp，但紧挨着它们的环境 `ToggleableChip`
+仍然是默认的 `ChipsDefaults.Small`（32.dp，`PlaybackHud.kt:166` 没有传 `chipSize`），两组控件同一行、
+只隔着一条 3.dp 宽 24.dp 高的分隔线，高度不再一致。跟用户确认过，这个后果**接受，不改代码，只记录**——
+HUD 里格式按钮变大本身对 VR 点击也是好事，只是跟旁边 chip 不完全对齐这一点这次不处理。
 
 ### 验证状态（如实分层记录）
 
@@ -1716,6 +1737,9 @@ Important 发现明确问过用户，两条都选了"先记录、这轮不处理
   3. "开始播放"按钮现在是否肉眼可见地比之前更突出（更高）。
   4. 点字幕胶囊是否仍然能正常打开文件选择器（这次只换了外壳，`onPickSubtitle` 回调本身没有改动，但
      没有实测走一遍）。
+  5. 沉浸播放 HUD 里格式修正胶囊变大、跟旁边环境 chip 高度不一致的视觉效果实际戴上看是否明显、是否
+     影响使用——这是上面记录的范围外副作用，用户已确认接受、这次不改代码，但实际视觉效果这次没有肉眼
+     看过（连截图都没有，进沉浸播放才会出现这个 HUD）。
 
-  以上 4 项需要用户实际戴上设备、用真实指向输入（控制器/手势）逐个试一遍——真机当时没有连接，无法在
+  以上 5 项需要用户实际戴上设备、用真实指向输入（控制器/手势）逐个试一遍——真机当时没有连接，无法在
   这次会话里补测。

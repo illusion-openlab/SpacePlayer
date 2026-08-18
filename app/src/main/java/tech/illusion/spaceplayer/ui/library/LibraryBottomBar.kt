@@ -45,12 +45,19 @@ import tech.illusion.spaceplayer.ui.label
 import tech.illusion.spaceplayer.ui.shortLabel
 
 // Real, uniform gap between every clickable element in this bar, applied once at the Row level
-// instead of as manual per-child trailing padding - a per-child .padding(end = Ndp) is only a
-// real gap if it comes AFTER that child's own .clickable()/.toggleable() in its modifier chain;
-// several elements here had it BEFORE (dead space excluded from that child's own hit region, not
-// space protecting it from its neighbor - confirmed for ToggleableChip and the old subtitle Text
-// by decompiling design-0.13.3-sources.jar). Arrangement.spacedBy lives at the parent Row, so it
-// can never be absorbed into or excluded from any child's own hit-test region.
+// instead of as manual per-child trailing padding. Correction after a final-review pass actually
+// decompiled Chips.kt/FormatMenuButton.kt: the environment ToggleableChip's and the old
+// FormatMenuButton's per-child .padding(end = Ndp) were NOT dead zones - both are wrap-content
+// (only a defaultMinSize floor, no fixed outer .height()/.size()), so padding placed before their
+// .toggleable()/.clickable() only adds real space around the full hit region, it can't shrink it.
+// The one genuine dead-zone bug this class of mistake ever caused was the sidebar's
+// SideNavigationItem (see MainLibraryScreen.kt's SIDEBAR_ITEM_GAP comment): there, an outer FIXED
+// .height() sits between the padding and .clickable(), so the padding is forced to carve its
+// space out of that fixed budget instead of adding to it. The old subtitle Text's real problem was
+// different again - zero padding INSIDE its hit region (nothing to grow the tap target beyond the
+// bare glyph bounds), not padding excluded from one. Arrangement.spacedBy here is still the right,
+// simpler choice regardless (real space between siblings, immune to any child's own modifier
+// chain), just not because every element it replaces was individually broken.
 private val BAR_ITEM_GAP = 16.dp
 
 @Composable
