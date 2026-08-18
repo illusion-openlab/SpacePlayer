@@ -27,6 +27,7 @@ import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.design.menu.Menu
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
+import com.pico.spatial.ui.graphics.SpatialHoverStyle
 import tech.illusion.spaceplayer.ui.library.SpacePlayerBorder
 import tech.illusion.spaceplayer.ui.library.SpacePlayerSurface
 import tech.illusion.spaceplayer.ui.library.SpacePlayerTextPrimary
@@ -85,7 +86,12 @@ fun FormatMenuButton(
             modifier = Modifier
                 .heightIn(min = 44.dp)
                 .clip(shape)
-                .spatialHoverEffect()
+                // Highlight, not the Default style: SpatialHoverStyle.Default is documented as
+                // "determined by the system" and is subtle enough that this pill read as having no
+                // hover feedback. NOTE this component is shared with the immersive HUD
+                // (PlaybackHud.kt), so the HUD's format pills get the stronger highlight too - see
+                // AGENTS.md's 2026-08-18 note about this component's second call site.
+                .spatialHoverEffect(SpatialHoverStyle.Highlight)
                 .clickable(
                     interactionSource = interactionSource,
                     indication = LocalIndication.current,

@@ -66,6 +66,7 @@ import com.pico.spatial.ui.design.SideNavigationItemDefaults
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
+import com.pico.spatial.ui.graphics.SpatialHoverStyle
 import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
 import com.pico.spatial.ui.platform.containers.StageStyle
 import kotlinx.coroutines.launch
@@ -115,8 +116,9 @@ private val NAV_ITEM_HEIGHT = 64.dp
 // Real gap between sidebar items, inserted as a sibling Spacer rather than padding on either
 // item's own modifier - see the comment at its usage site for why padding-before-clickable would
 // make this dead space carved out of an item's own tap area instead of a real gap between two
-// full-sized ones.
-private val SIDEBAR_ITEM_GAP = 8.dp
+// full-sized ones. Widened from 8.dp per user request; also gives each item's hover highlight room
+// to read as belonging to one item rather than bleeding into its neighbour.
+private val SIDEBAR_ITEM_GAP = 20.dp
 
 private fun LibraryCategory.iconRes(): Int = when (this) {
     LibraryCategory.LIBRARY -> R.drawable.ic_nav_library
@@ -304,6 +306,15 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                     ),
                                     modifier = Modifier
                                         .height(NAV_ITEM_HEIGHT)
+                                        // SideNavigationItem ships NO hover of its own (its source
+                                        // is clip(shape).drawBehind{...}.then(modifier)... with no
+                                        // spatialHoverEffect anywhere), so the sidebar had no hover
+                                        // feedback at all. Placed after .height() and before
+                                        // .clickable(), which puts it after the SDK's own
+                                        // clip(shape) - the native hover then picks up the item's
+                                        // rounded shape instead of a square. Same ordering rule as
+                                        // VideoGridCard and FormatMenuButton.
+                                        .spatialHoverEffect(SpatialHoverStyle.Highlight)
                                         .clickable(
                                             interactionSource = categoryInteractionSource,
                                             indication = LocalIndication.current,

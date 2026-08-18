@@ -33,6 +33,7 @@ import com.pico.spatial.ui.design.ToggleableChip
 import com.pico.spatial.ui.design.menu.MenuItem
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
+import com.pico.spatial.ui.graphics.SpatialHoverStyle
 import tech.illusion.spaceplayer.R
 import tech.illusion.spaceplayer.library.VideoItem
 import tech.illusion.spaceplayer.playback.Environment
@@ -58,7 +59,7 @@ import tech.illusion.spaceplayer.ui.shortLabel
 // bare glyph bounds), not padding excluded from one. Arrangement.spacedBy here is still the right,
 // simpler choice regardless (real space between siblings, immune to any child's own modifier
 // chain), just not because every element it replaces was individually broken.
-private val BAR_ITEM_GAP = 16.dp
+private val BAR_ITEM_GAP = 28.dp
 
 @Composable
 fun LibraryBottomBar(
@@ -195,7 +196,10 @@ private fun PillButton(
         modifier = modifier
             .heightIn(min = 44.dp)
             .clip(shape)
-            .spatialHoverEffect()
+            // Highlight, not the Default style: SpatialHoverStyle.Default is documented as
+            // "determined by the system" and is subtle enough that these pills read as having no
+            // hover feedback at all. Highlight overlays a visible highlight on the target view.
+            .spatialHoverEffect(SpatialHoverStyle.Highlight)
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
