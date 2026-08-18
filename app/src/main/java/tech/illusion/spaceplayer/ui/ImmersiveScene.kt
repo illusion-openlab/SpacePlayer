@@ -33,30 +33,22 @@ private const val SUBTITLE_ATTACHMENT_ID = "subtitle"
 
 // Fixed HUD tilt, in DEGREES (EulerAngles fields are degrees, not radians - confirmed by
 // decompiling foundation-0.13.3-sources.jar's EulerAngles.toQuat(), which applies its own
-// `* (PI / 180.0)`). The panel sits below eye level and is angled face-up to be read from above,
-// looking down - 60 degrees per explicit user request.
+// `* (PI / 180.0)`). The panel sits below eye level and is angled face-up to be read from above.
+// Magnitude set to 30 by the user after seeing 60 in a headset.
 //
-// Sign set from the first two observations that actually constrain it. Every report before the
-// rotation moved into the frame loop is void as evidence - the rotation was inert then, so every
-// "the tilt is backwards" report was describing the same untouched default orientation.
+// The sign comes from the only two observations that ever constrained it. Every report predating
+// the move of this assignment into the frame loop is void as evidence, because the rotation was
+// inert then - each "the tilt is backwards" report was describing the same untouched default.
+// With the rotation actually live:
+//   pitch = 0 (the untouched default): top edge leans toward the viewer, moderately.
+//   pitch = +60: panel edge-on, visible only as a thin line.
+// Edge-on is 90 degrees off facing, so the default already sits ~30 degrees tilted toward the
+// viewer and positive pitch deepens that lean; negative is the face-up direction.
 //
-// The two real data points, with the rotation live:
-//   pitch = 0 (i.e. the untouched default): panel's top edge leans toward the viewer, moderately.
-//   pitch = +60: panel is edge-on, visible only as a thin line.
-// Edge-on is 90 degrees from facing, so the default already sits about 30 degrees tilted toward
-// the viewer, and positive pitch adds to that lean. Negative pitch is therefore the face-up
-// direction this panel needs, and -60 lands it roughly 30 degrees face-up from vertical.
-//
-// -60 rather than the -90 that would put it at exactly 60 degrees face-up: -90 is only correct if
-// that 30-degree default estimate is exact, and it fails badly if the default is nearer 0 (it would
-// swing the panel back to edge-on the other way). -60 stays clearly readable across the whole
-// plausible range of that estimate. If it now reads as too shallow, increase the magnitude - that
-// direction degrades gracefully, unlike overshooting toward edge-on.
-//
-// Still not verifiable locally: the HUD is an AttachmentPanel, and attachment panels do not appear
-// in compositor screenshots (the video screen that does show up is an ECS model entity, a different
-// render path), so this can only be judged in a headset.
-private const val HUD_PITCH_DEGREES = -60f
+// Not verifiable locally: the HUD is an AttachmentPanel, and attachment panels do not appear in
+// compositor screenshots (the video screen that does is an ECS model entity, a different render
+// path), so this can only be judged in a headset.
+private const val HUD_PITCH_DEGREES = -30f
 
 @Composable
 fun ImmersiveScene() {
@@ -73,6 +65,9 @@ fun ImmersiveScene() {
     // whether hand tracking has ever produced a real frame this session - see the 5s auto-hide
     // LaunchedEffect below for why this gates the only escape hatch out of immersive playback.
     var hasEverTrackedHand by remember { mutableStateOf(false) }
+    // True while the user's ray/pointer is over the HUD panel - reported by PlaybackHud below.
+    // Gives the panel first claim on a pinch; see the pinch block in the frame loop.
+    var isHudPointerOver by remember { mutableStateOf(false) }
 
     fun returnToMainWindow() {
         viewModel.exitImmersive()
@@ -181,7 +176,22 @@ fun ImmersiveScene() {
                         val distance = Vector3.distance(thumbTip.position, indexTip.position)
                         val pinch = PinchDetector.update(distance, wasPinching)
                         wasPinching = pinch.isPinching
-                        if (pinch.justEngaged) {
+                        // Priority rule, per user request: the control panel gets first claim on a
+                        // pinch, and only a pinch the panel has no use for falls through to
+                        // show/hide. PICO hand input is "ray + pinch = click", so without this every
+                        // press of a HUD button also fired this toggle and the panel vanished
+                        // mid-interaction.
+                        //
+                        // "The panel wants it" is read as "the pointer is currently over the panel"
+                        // (isHudPointerOver, reported by PlaybackHud's root hoverable). Pointing at
+                        // the panel and pinching therefore presses whatever is under the ray and
+                        // leaves visibility alone; pinching anywhere else still toggles, which also
+                        // gives an easy way to dismiss the panel without hunting for a button.
+                        //
+                        // Failure mode is deliberately the safe one: if this hover signal never
+                        // arrives, isHudPointerOver stays false and behaviour is exactly what it was
+                        // before this change, rather than a HUD that can no longer be summoned.
+                        if (pinch.justEngaged && !isHudPointerOver) {
                             viewModel.toggleHudVisibility()
                         }
                     } else {
@@ -254,6 +264,7 @@ fun ImmersiveScene() {
                         onSeek = { viewModel.seekTo(it) },
                         onToggleMute = { viewModel.toggleMute() },
                         onReturnToMainWindow = { returnToMainWindow() },
+                        onPointerOverChange = { isHudPointerOver = it },
                     )
                 }
                 AttachmentPanel(id = SUBTITLE_ATTACHMENT_ID) {

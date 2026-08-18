@@ -1,6 +1,9 @@
 package tech.illusion.spaceplayer.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -109,12 +114,24 @@ fun PlaybackHud(
     onSeek: (Long) -> Unit,
     onToggleMute: () -> Unit,
     onReturnToMainWindow: () -> Unit,
+    onPointerOverChange: (Boolean) -> Unit = {},
 ) {
     val isFlatProjection = currentProjection == Projection.FLAT
+    // Reports whether the user's pointer/ray is currently over this panel, so the caller can give
+    // the panel first claim on a pinch: PICO hand input is "ray + pinch = click", so a global pinch
+    // listener would otherwise fire the HUD show/hide toggle every time the user pinches to press a
+    // button here. See ImmersiveScene's pinch block for the priority rule this feeds.
+    val panelInteractionSource = remember { MutableInteractionSource() }
+    val isPointerOver by panelInteractionSource.collectIsHoveredAsState()
+    LaunchedEffect(isPointerOver) { onPointerOverChange(isPointerOver) }
+    // Reset on teardown so a stale "pointer is over the panel" can't outlive the panel and
+    // permanently swallow the gesture that brings it back.
+    DisposableEffect(Unit) { onDispose { onPointerOverChange(false) } }
     PicoTheme {
         Box(
             modifier = Modifier
                 .width(HudPanelWidth)
+                .hoverable(panelInteractionSource)
                 .clip(RoundedCornerShape(20.dp))
                 .backgroundMaterial(true, Material.Regular)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
