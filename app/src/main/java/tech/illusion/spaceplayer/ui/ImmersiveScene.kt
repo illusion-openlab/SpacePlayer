@@ -36,15 +36,27 @@ private const val SUBTITLE_ATTACHMENT_ID = "subtitle"
 // `* (PI / 180.0)`). The panel sits below eye level and is angled face-up to be read from above,
 // looking down - 60 degrees per explicit user request.
 //
-// THE SIGN IS UNVERIFIED. Every earlier on-device observation of this angle is worthless as
-// evidence, because until this change the rotation was set inside `initial` and never took effect
-// at all (see the assignment site in the frame loop) - so neither "-22f looked wrong" nor "+22f
-// looked wrong" tells us anything about which way a sign actually tilts this panel. It could not be
-// re-checked here either: the HUD is an AttachmentPanel, and attachment panels do not appear in
-// this device's/emulator's compositor screenshots (the video screen that does show up is an ECS
-// model entity, a different render path), so there is no way to see the result without a headset.
-// If it tilts the wrong way, flipping the sign of this one constant is the whole fix.
-private const val HUD_PITCH_DEGREES = 60f
+// Sign set from the first two observations that actually constrain it. Every report before the
+// rotation moved into the frame loop is void as evidence - the rotation was inert then, so every
+// "the tilt is backwards" report was describing the same untouched default orientation.
+//
+// The two real data points, with the rotation live:
+//   pitch = 0 (i.e. the untouched default): panel's top edge leans toward the viewer, moderately.
+//   pitch = +60: panel is edge-on, visible only as a thin line.
+// Edge-on is 90 degrees from facing, so the default already sits about 30 degrees tilted toward
+// the viewer, and positive pitch adds to that lean. Negative pitch is therefore the face-up
+// direction this panel needs, and -60 lands it roughly 30 degrees face-up from vertical.
+//
+// -60 rather than the -90 that would put it at exactly 60 degrees face-up: -90 is only correct if
+// that 30-degree default estimate is exact, and it fails badly if the default is nearer 0 (it would
+// swing the panel back to edge-on the other way). -60 stays clearly readable across the whole
+// plausible range of that estimate. If it now reads as too shallow, increase the magnitude - that
+// direction degrades gracefully, unlike overshooting toward edge-on.
+//
+// Still not verifiable locally: the HUD is an AttachmentPanel, and attachment panels do not appear
+// in compositor screenshots (the video screen that does show up is an ECS model entity, a different
+// render path), so this can only be judged in a headset.
+private const val HUD_PITCH_DEGREES = -60f
 
 @Composable
 fun ImmersiveScene() {
