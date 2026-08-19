@@ -9,7 +9,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "tech.illusion.spaceplayer"
+        applicationId = "tech.illusion.loveimmersive"
         minSdk = 35
         targetSdk = 35
         versionCode = 1
