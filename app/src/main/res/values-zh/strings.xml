@@ -1,4 +1,5 @@
 <resources>
+    <string name="app_name">爱看沉浸</string>
     <string name="projection_flat">平面</string>
     <string name="projection_180">180°</string>
     <string name="projection_360">360°</string>
@@ -19,7 +20,7 @@
     <string name="library_category_import">其它</string>
     <string name="library_import_action">其它 · 选择文件</string>
     <string name="library_imported_video_default_name">导入的视频</string>
-    <string name="library_permission_rationale">SpacePlayer 需要访问本机视频的权限才能显示视频库</string>
+    <string name="library_permission_rationale">爱看沉浸需要访问本机视频的权限才能显示视频库</string>
     <string name="library_grant_permission">去授权</string>
     <string name="library_permission_open_settings">打开系统设置</string>
     <string name="library_permission_saf_hint">如果点"去授权"没有任何反应，说明权限已被永久拒绝，只能到系统设置里开启。也可以不授权，用左下角的"其它 · 选择文件"逐个打开视频。</string>

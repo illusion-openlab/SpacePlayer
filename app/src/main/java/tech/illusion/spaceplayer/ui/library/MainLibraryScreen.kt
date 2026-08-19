@@ -272,7 +272,7 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                 contentAlignment = Alignment.BottomStart,
                             ) {
                                 Text(
-                                    text = "SpacePlayer",
+                                    text = stringResource(R.string.app_name),
                                     color = SpacePlayerTextPrimary,
                                     style = PicoTheme.typography.titleLarge.copy(fontSize = 28.sp),
                                 )

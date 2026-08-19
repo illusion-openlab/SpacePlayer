@@ -9,6 +9,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.math.EulerAngles
 import com.pico.spatial.core.math.Vector3
@@ -26,6 +29,7 @@ import tech.illusion.spaceplayer.di.PLAYBACK_SESSION_SCOPE_ID
 import tech.illusion.spaceplayer.ecs.PinchDetector
 import tech.illusion.spaceplayer.ecs.SubtitleFollowComponent
 import tech.illusion.spaceplayer.ecs.applySubtitleFollow
+import tech.illusion.spaceplayer.playback.PlaybackState
 
 private const val LOADING_ATTACHMENT_ID = "loading"
 private const val HUD_ATTACHMENT_ID = "hud"
@@ -68,6 +72,9 @@ fun ImmersiveScene() {
     // True while the user's ray/pointer is over the HUD panel - reported by PlaybackHud below.
     // Gives the panel first claim on a pinch; see the pinch block in the frame loop.
     var isHudPointerOver by remember { mutableStateOf(false) }
+    // Whether playback was actually PLAYING at the moment the app backgrounded - only resume
+    // automatically on foreground if this is true, so a manual pause survives a background trip.
+    var wasPlayingBeforeBackground by remember { mutableStateOf(false) }
 
     fun returnToMainWindow() {
         viewModel.exitImmersive()
@@ -96,6 +103,29 @@ fun ImmersiveScene() {
     DisposableEffect(Unit) {
         navigator.closeWindowContainer(MAIN_WINDOW_ID)
         onDispose { }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    if (viewModel.manager.state == PlaybackState.PLAYING) {
+                        wasPlayingBeforeBackground = true
+                        viewModel.manager.pause()
+                    }
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    if (wasPlayingBeforeBackground) {
+                        wasPlayingBeforeBackground = false
+                        viewModel.manager.resume()
+                    }
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Auto-return to the main window once playback reaches the end, same path as the HUD's
