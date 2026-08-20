@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">SpacePlayer</string>
+    <string name="app_name">爱看沉浸</string>
 
     <string name="projection_flat">Flat</string>
     <string name="projection_180">180°</string>
@@ -21,7 +21,7 @@
     <string name="library_category_import">Other</string>
     <string name="library_import_action">Other · Choose file</string>
     <string name="library_imported_video_default_name">Imported video</string>
-    <string name="library_permission_rationale">SpacePlayer needs access to your local videos to show the library</string>
+    <string name="library_permission_rationale">LoveImmersive needs access to your local videos to show the library</string>
     <string name="library_grant_permission">Grant access</string>
     <string name="library_permission_open_settings">Open system settings</string>
     <string name="library_permission_saf_hint">If the button above does nothing, access was permanently denied — grant it in system settings. You can also open videos one at a time with “Other · Choose file” in the bottom left; that needs no permission.</string>

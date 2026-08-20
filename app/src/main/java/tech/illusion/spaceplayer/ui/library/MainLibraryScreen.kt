@@ -256,9 +256,17 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier
                         .width(SIDEBAR_WIDTH)
                         .fillMaxHeight()
+                        .background(Color(color = 0xF5F0EBff))
                         .padding(top = HEADER_ROW_HEIGHT_PADDING),
                 ) {
+                    // SideNavigation's own root Column sizes itself via Modifier.width(IntrinsicSize.Min)
+                    // (SDK source, design-0.13.3), i.e. shrink-to-fit its narrowest-breakable content. For
+                    // CJK labels that have no non-breaking word boundaries, that intrinsic minimum collapses
+                    // to roughly one glyph's width, squeezing every label into a vertical single-character
+                    // stack. fillMaxWidth() forces it back up to the fixed SIDEBAR_WIDTH already established
+                    // by this parent Column.
                     SideNavigation(
+                        modifier = Modifier.fillMaxWidth(),
                         header = {
                             // padding(bottom) before height() so it adds a gap *below* the fixed-
                             // height header box (extending the total space SideNavigation reserves

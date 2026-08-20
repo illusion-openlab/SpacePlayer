@@ -239,7 +239,7 @@ bug，最后靠 `adb shell uiautomator dump` 直接看到"其它"那个 View 的
   ```bash
   pico-cli emulator start --avd Pico_Emulator_0_13 --wait-timeout 180 -y   # API 36，兼容
   pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
-  pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
+  pico-cli app launch tech.illusion.loveimmersive --device emulator-5554
   pico-cli capture screenshot --out ./artifacts/<name>.png --device emulator-5554
   ```
 - pico-spatial-knowledge 的知识库（`graph.json`）在这台机器上一度缺失（`pico-cli mcp doctor` 报错），已用
@@ -711,7 +711,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew assembleDebug
 pico-cli emulator start --avd Pico_Emulator_0_13 --wait-timeout 180 -y   # 若模拟器未运行
 pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
-pico-cli app launch tech.illusion.spaceplayer --device emulator-5554
+pico-cli app launch tech.illusion.loveimmersive --device emulator-5554
 ```
 
 ## 下一步
@@ -1913,3 +1913,88 @@ HUD 的旋转则是在 `initial { }` 里、`content.addEntity(this)` 前后设�
 **验证状态**：`clean assembleDebug testDebugUnitTest` BUILD SUCCESSFUL；模拟器上完整走通"选中视频 → 开始播放
 → 进入沉浸 Stage"，无 FATAL、进程存活。**倾斜角度和捏合优先级都没能在本地肉眼验证**——HUD 是 AttachmentPanel，
 不出现在合成器截图里；模拟器也没有手部追踪，捏合路径根本不会执行。两者都需要戴设备确认。
+
+## 2026-08-18 补记：应用改名与 applicationId 变更（当时未记录）
+
+- 应用名改为"爱看沉浸"：找齐了三处硬编码/缺省的地方——`values-zh/strings.xml` 原来没有 `app_name`
+  override（`zh`/`zh-CN` 会用到，但 `zh-HK`/`zh-TW` 不会，会摔回 `values/` 默认桶，这是 `aapt2 dump badging`
+  验证过的真实 Android 资源回退行为，不是猜的）、侧边栏顶部曾经硬编码的 `"SpacePlayer"` 字面量、授权说明句。
+- `applicationId` 由 `tech.illusion.spaceplayer` 改成 `tech.illusion.loveimmersive`；`namespace`（内部 Kotlin
+  包名/`R` 类）按用户明确选择保持 `tech.illusion.spaceplayer` 不变——两者是 AGP 7+ 里互相独立的概念，改一个
+  不需要联动另一个。旧包名残留：测试真机和模拟器上 `tech.illusion.spaceplayer` 都还装着，且在模拟器上一度
+  正是这个旧包处于前台/被系统当作最近任务，一度让人误以为新包没生效（`dumpsys activity activities` 确认
+  `topResumedActivity` 当时是旧包）。是否卸载旧包尚未决定，先记一笔。
+
+## 2026-08-19：应用图标改为极简播放键（方案 D），替换 SDK 模板占位图
+
+用户要求先出多版扁平样式选，选定后再做分层，不要一上来就直接产出 PICO 专用的分层/SDF 文件。做了 A（护目镜+
+播放）/B（双镜片头显）/C（球体全景）/D（极简播放键）四版预览，发到 Artifact 页面对比后用户选了 D。
+
+- **设计**：对角渐变背景（深蓝 `#120E3A` → 青蓝 `#0096DC`），中间一个纯白播放三角，不含任何 VR 造型元素。
+  三角形几何直接照抄用户已经看过、认可的那版预览（`gen_options.py` 里 `design_d()` 的坐标），保证选中的和
+  最终落地的是同一个形状。
+- **分层产出**：background 层是整张不透明的渐变图（`icon_3d_layer_0.png`，1024×1024 RGB，圆内无一个透明
+  像素，满足 PICO 图标规范里"背景层不能有透明"的要求）；foreground 层只有播放三角，边缘干净、没有手工加阴影/
+  高光（规范要求系统会自己叠加悬浮效果，这些留白交给系统）。三角形先按 4× 超采样画好再缩小，边缘走的是标准
+  抗锯齿，不是手工做的软阴影。
+- **sdf 伴生文件**：PICO 官方文档从没提过这个格式，是这个会话里靠对比 SDK 自带模板占位图反推出来的经验规律
+  ——同一轮廓的纯白不透明填充，硬边缘换成约 32px 宽的软过渡带。background 层本身填满整张画布没有边缘，所以
+  它的 sdf（`icon_3d_sdf_0.png`）就是一张纯白不透明图；foreground 的 sdf（`icon_3d_sdf_1.png`）用
+  `GaussianBlur` + `MinFilter` 近似出这条过渡带（`gen_final.py` 里的 `make_sdf()`），核心区域强制拉回纯
+  不透明，避免高斯模糊把三角内部也软化掉。
+- **落地文件**：直接同名替换了 `app/src/main/res/drawable/icon_3d_layer_{0,1}.png`、
+  `icon_3d_sdf_{0,1}.png`，以及 `mipmap-anydpi/ic_spatial_launcher.png`（扁平兜底图=背景+前景合成后的效果）。
+  `values/drawables_3d.xml` 引用的文件名没变，不用改。
+
+**验证状态**：`assembleDebug` BUILD SUCCESSFUL；替换后的五张图逐一用 Python 检查过尺寸（1024×1024）、格式
+（背景/兜底图 RGB 无透明，前景/sdf 图 RGBA 且透明通道数值符合预期：四角 alpha=0，三角内部 alpha=255，边缘
+有渐变带）、文件大小（最大 60KB，远低于规范的 4MB 上限）。在模拟器上装了新包并启动，`logcat` 里只有
+`SpatialRuntimeService` 的正常渲染心跳，没有 `AndroidRuntime` 崩溃。**没能验证的是图标在系统 App
+Library/桌面里悬浮时的分层 3D 效果本身**——这和 HUD 面板是同一类限制：`pico-cli capture screenshot`/
+`adb screencap` 截不到 PICO 系统 launcher 的空间面板内容（试了两次 `am start -c HOME`，截图里出现的始终是
+某个应用自己的窗口，不是 launcher 的应用列表面板），所以分层悬浮效果、颜色在 Display P3 下的实际呈现，
+都需要戴设备去应用库里划一下手柄射线看效果，本地环境看不到。
+
+## 2026-08-20 补记：`pico-cli app launch` 用旧包名报 "Activity class ... does not exist"
+
+`applicationId` 早在 08-18 就改成了 `tech.illusion.loveimmersive`（见上面那条补记），但本文件里两处
+"如何构建/安装/运行"命令还留着改名前的 `pico-cli app launch tech.illusion.spaceplayer`——`namespace`
+没变，所以 `LaunchActivity` 的完整类名依旧是 `tech.illusion.spaceplayer.platform.LaunchActivity`，但
+`pico-cli app launch <包名>` 传的是 applicationId，用旧包名去查会直接报
+`Activity class {tech.illusion.spaceplayer/tech.illusion.spaceplayer.platform.LaunchActivity} does not
+exist`。`adb -s emulator-5554 shell pm list packages` 确认过：这台模拟器上根本没装
+`tech.illusion.spaceplayer`，只有 `tech.illusion.loveimmersive`。已把两处命令改成
+`pico-cli app launch tech.illusion.loveimmersive`，并用同一台模拟器验证过：能正常启动，
+`SpatialRuntimeService` watchdog 心跳里 `focus=16(tech.illusion.loveimmersive)`，无 `AndroidRuntime` 崩溃。
+
+Android Studio 里直接点 Run 仍然报同一个错，是另一层问题：`.idea/deploymentTargetSelector.xml` 里
+Studio 的部署目标记的是真机序列号 `PB311XKGL4160087B`，但当时这台机器上 `adb devices` 只看得到
+`emulator-5554`；另外 Studio 解析"Default Activity"启动目标用的是它自己缓存的 Gradle 工程模型（跟命令行
+`./gradlew` 各自独立），改了 `applicationId` 后如果没有重新 Sync，Studio 侧仍可能拿旧包名去解析启动
+Activity。让用户 Sync Project with Gradle Files（必要时 Clean Project 再冷启动跑一次，别用 Apply
+Changes）来解决，命令行侧的问题已经确认修复。
+
+## 2026-08-20 补记：改名后侧边栏中文标签被挤压成竖排单字
+
+现象：侧边栏顶部应用名"爱看沉浸"、导航项"视频资源库"/"下载"全部挤成一列，一行只有一个字，互相重叠——
+截图见用户反馈。
+
+根因（`Explore` 子代理反编译 `com.pico.spatial.ui.design:design:0.13.3` 源码确认）：`MainLibraryScreen.kt`
+里包 `SideNavigation` 内容的外层 `Column` 有固定宽度 `SIDEBAR_WIDTH = 220.dp`，但调用
+`SideNavigation(header = { ... }) { ... }` 时没传 `modifier`。SDK 内部 `SideNavigation` 的根 `Column`
+默认用 `Modifier.width(IntrinsicSize.Min).widthIn(min = 100.dp)`——即按内容能收缩到的最小宽度收缩，只兜底
+100.dp。对英文（"SpacePlayer"这类无空格但也不可在词中间断行的单词）算最小宽度时结果就是整个单词的宽度，
+不会触发问题；但中文没有"不可断行的词"这个概念，逐字之间都是合法断行点，`Text` 的 minIntrinsicWidth
+因此收缩到约一个字符的宽度——整个 `SideNavigation` 内容列的实际宽度被压到远小于 220dp，里面用
+`Box(Modifier.weight(1f))` 撑开的标签只分到几个像素，被迫逐字换行。这是 08-19 应用改名成中文（`28782cf`）
+之后才会触发的潜伏 bug，之前"SpacePlayer"这个英文名从未暴露过它。
+
+修复：给 `SideNavigation(...)` 调用显式传 `modifier = Modifier.fillMaxWidth()`（`MainLibraryScreen.kt`
+约第 261 行），让它的内容列强制撑满父级已经固定好的 220dp 宽度，而不是按 `IntrinsicSize.Min` 收缩。
+之所以安全：外层 `Column` 早先那次修复（见"如何构建/安装/运行"上方注释）已经把 `SIDEBAR_WIDTH` 定死在这层，
+`SideNavigation` 只是这个已经有固定宽度的 `Column` 的子节点，给它 `fillMaxWidth()` 不会像之前那次"其它"
+按钮 `fillMaxWidth()` 泄漏到整个 `Row` 宽度的 bug一样出问题（那次是外层 `Column` 本身没有宽度约束）。
+
+**验证状态**：`assembleDebug` + `testDebugUnitTest` BUILD SUCCESSFUL；模拟器上装包重启，截图确认"爱看沉浸"、
+"视频资源库"、"下载"均恢复单行显示，无重叠；`logcat` 无 `AndroidRuntime`/`FATAL`。真机上的实际间距/字重
+观感未验证，理论上跟模拟器一致（同一套 Compose 布局代码，不依赖模拟器专属行为）。
