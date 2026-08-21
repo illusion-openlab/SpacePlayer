@@ -1,5 +1,7 @@
 package tech.illusion.spaceplayer.ui
 
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -15,6 +17,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.math.EulerAngles
 import com.pico.spatial.core.math.Vector3
+import com.pico.spatial.tracking.controller.ControllerTrackingProvider
 import com.pico.spatial.tracking.hand.HandJoint
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.foundation.content.SpatialView
@@ -69,6 +72,11 @@ fun ImmersiveScene() {
     // whether hand tracking has ever produced a real frame this session - see the 5s auto-hide
     // LaunchedEffect below for why this gates the only escape hatch out of immersive playback.
     var hasEverTrackedHand by remember { mutableStateOf(false) }
+    // Same purpose as hasEverTrackedHand, but for a controller-based session - hand tracking and
+    // controller tracking are mutually exclusive on this hardware, so a controller-only session
+    // never sets hasEverTrackedHand. See the controller-action DisposableEffect and the 5s
+    // auto-hide LaunchedEffect below.
+    var hasEverTrackedController by remember { mutableStateOf(false) }
     // True while the user's ray/pointer is over the HUD panel - reported by PlaybackHud below.
     // Gives the panel first claim on a pinch; see the pinch block in the frame loop.
     var isHudPointerOver by remember { mutableStateOf(false) }
@@ -128,6 +136,35 @@ fun ImmersiveScene() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // Controller equivalent of the hand-pinch toggle below: ControllerActionListener only exposes
+    // button/trigger state (ControllerTrackingProvider.latestData carries poses only, no buttons),
+    // and per its KDoc arrives on the data source's own thread, never the main thread - so it's
+    // wired here as a listener + Handler.post{} rather than polled from the per-frame loop the way
+    // hand-pinch is. Re-registers whenever controllerTrackingProvider is replaced (a fresh instance
+    // per startPlayback() call, same lifecycle as hmdTrackingProvider/handTrackingProvider).
+    DisposableEffect(viewModel.controllerTrackingProvider) {
+        val controllerProvider = viewModel.controllerTrackingProvider
+            ?: return@DisposableEffect onDispose { }
+        val mainHandler = Handler(Looper.getMainLooper())
+        var wasTriggerPressed = false
+        val listener = ControllerTrackingProvider.ControllerActionListener { action ->
+            mainHandler.post {
+                // Listener firing at all proves a controller is present and reporting input - the
+                // same role hasEverTrackedHand plays for a hand-pose frame arriving.
+                hasEverTrackedController = true
+                val triggerPressed = action.right.triggerPressed
+                // Same priority rule as the pinch toggle: the panel gets first claim, so a trigger
+                // press while pointing at it presses whatever's under the ray instead of toggling.
+                if (triggerPressed && !wasTriggerPressed && !isHudPointerOver) {
+                    viewModel.toggleHudVisibility()
+                }
+                wasTriggerPressed = triggerPressed
+            }
+        }
+        controllerProvider.addControllerActionListener(listener)
+        onDispose { controllerProvider.removeControllerActionListener(listener) }
+    }
+
     // Auto-return to the main window once playback reaches the end, same path as the HUD's
     // "返回主窗口" button.
     LaunchedEffect(viewModel.returnToMainWindowRequested) {
@@ -143,16 +180,18 @@ fun ImmersiveScene() {
     LaunchedEffect(viewModel.manager.hasFirstFrameRendered) {
         if (viewModel.manager.hasFirstFrameRendered) {
             delay(5000)
-            // Only auto-hide once hand tracking has actually proven itself functional at least once
-            // this session (hasEverTrackedHand, set from the per-frame hand-tracking block below).
-            // The HUD is the ONLY way back to the main window ("返回主窗口") plus every playback
-            // control, and toggleHudVisibility() has exactly one caller: the pinch rising edge. If
-            // hand tracking never produces a frame - no controller support on the emulator, a
-            // permission not yet granted this session, or a device that simply lacks hand tracking -
-            // auto-hiding anyway would strand the user with no visible controls and no way back short
-            // of the video ending or an OS-level home press. Deliberately doing nothing here (HUD
-            // stays visible) is the same safe behavior the app had before this feature existed.
-            if (hasEverTrackedHand) {
+            // Only auto-hide once hand tracking OR controller tracking has actually proven itself
+            // functional at least once this session (hasEverTrackedHand from the per-frame
+            // hand-tracking block below, hasEverTrackedController from the ControllerActionListener
+            // DisposableEffect above). The HUD is the ONLY way back to the main window ("返回主窗口")
+            // plus every playback control, and toggleHudVisibility() has exactly two callers: the
+            // hand-pinch rising edge and the controller-trigger rising edge. If neither hand tracking
+            // nor controller tracking ever produces a frame - a permission not yet granted this
+            // session, or a device that lacks both - auto-hiding anyway would strand the user with no
+            // visible controls and no way back short of the video ending or an OS-level home press.
+            // Deliberately doing nothing here (HUD stays visible) is the same safe behavior the app
+            // had before this feature existed.
+            if (hasEverTrackedHand || hasEverTrackedController) {
                 viewModel.hideHud()
             }
         }

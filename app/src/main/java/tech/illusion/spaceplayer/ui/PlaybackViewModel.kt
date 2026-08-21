@@ -11,6 +11,7 @@ import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.ecs.resource.VideoMaterial
 import com.pico.spatial.core.ecs.video.VideoDimensionMode
 import com.pico.spatial.core.math.Vector3
+import com.pico.spatial.tracking.controller.ControllerTrackingProvider
 import com.pico.spatial.tracking.hand.HandTrackingProvider
 import com.pico.spatial.tracking.hmd.HMDTrackingProvider
 import kotlinx.coroutines.CoroutineScope
@@ -69,6 +70,15 @@ class PlaybackViewModel(
     // BaseTrackingDataProvider.start() -> dataSource.addDataCallback() blocking path (confirmed in
     // tracking-0.13.3-sources.jar), so this must also run on backgroundScope, never the main thread.
     var handTrackingProvider: HandTrackingProvider? = null
+        private set
+
+    // Same ANR risk as HMDTrackingProvider/HandTrackingProvider above - start() blocks on the same
+    // BaseTrackingDataProvider path, so this also must run on backgroundScope, never the main
+    // thread. Needed so the HUD's 5s auto-hide timer (see ImmersiveScene.kt) has a working
+    // "bring it back" signal when the session is using a controller instead of bare hands - hand
+    // tracking and controller tracking are mutually exclusive, so hasEverTrackedHand alone never
+    // becomes true in a controller-only session and the panel used to never auto-hide at all.
+    var controllerTrackingProvider: ControllerTrackingProvider? = null
         private set
 
     val thumbTipEntity = Entity()
@@ -312,6 +322,15 @@ class PlaybackViewModel(
             val result = handProvider.start()
             Log.i(TAG, "HandTrackingProvider start result=$result supportState=${handProvider.supportState}")
         }
+        val controllerProvider = ControllerTrackingProvider()
+        controllerTrackingProvider = controllerProvider
+        backgroundScope.launch {
+            val result = controllerProvider.start()
+            Log.i(
+                TAG,
+                "ControllerTrackingProvider start result=$result supportState=${controllerProvider.supportState}",
+            )
+        }
         currentStereoMode.value = item.stereoMode
         if (item.projection == Projection.FLAT) {
             // Applied before applyProjection so the screen lands on the right anchor straight away.
@@ -338,6 +357,8 @@ class PlaybackViewModel(
         hmdTrackingProvider = null
         handTrackingProvider?.stop()
         handTrackingProvider = null
+        controllerTrackingProvider?.stop()
+        controllerTrackingProvider = null
         isImmersive.value = false
         returnToMainWindowRequested = false
     }
@@ -387,6 +408,8 @@ class PlaybackViewModel(
         hmdTrackingProvider = null
         handTrackingProvider?.stop()
         handTrackingProvider = null
+        controllerTrackingProvider?.stop()
+        controllerTrackingProvider = null
         backgroundScope.cancel()
     }
 }
