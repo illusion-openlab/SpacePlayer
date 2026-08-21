@@ -95,12 +95,26 @@ class PlaybackManager(private val context: Context) {
         duration = 1L
         hasFirstFrameRendered = false
         player.registerCypressMediaPlayerCallback(callback)
-        val pfd = context.contentResolver.openFileDescriptor(uri, "r")
-            ?: error("Cannot open file descriptor for $uri")
-        // AssetFileDescriptor.UNKNOWN_LENGTH (-1) makes CypressMediaPlayer's native decoder hang in
-        // PREPARING forever instead of erroring out - pass the real length via ParcelFileDescriptor's
-        // own fstat-backed size instead (content:// Uris from MediaStore/SAF are backed by real files).
-        val afd = AssetFileDescriptor(pfd, 0, pfd.statSize)
+        val afd = try {
+            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+                ?: error("Cannot open file descriptor for $uri")
+            // AssetFileDescriptor.UNKNOWN_LENGTH (-1) makes CypressMediaPlayer's native decoder hang in
+            // PREPARING forever instead of erroring out - pass the real length via ParcelFileDescriptor's
+            // own fstat-backed size instead (content:// Uris from MediaStore/SAF are backed by real files).
+            AssetFileDescriptor(pfd, 0, pfd.statSize)
+        } catch (e: Exception) {
+            // The uri can go stale between the library scan and the tap (file deleted/moved, or a
+            // SAF/MediaStore grant revoked across a restart) - letting this propagate left the native
+            // player registered with a callback that would never fire, since no data source was ever
+            // set. That produced a real ANR (2026-08-20 review log): the exception was silently
+            // swallowed by InputEventReceiver's top-level catch while the half-initialized player just
+            // sat there. Tear the registration back down and report failure the same way the player's
+            // own onError callback already does.
+            Log.e(TAG, "Cannot open file descriptor for $uri", e)
+            player.unregisterCypressMediaPlayerCallback()
+            state = PlaybackState.ERROR
+            return
+        }
         player.setDataSource(afd)
         afd.close()
         player.setVolume(DEFAULT_VOLUME)

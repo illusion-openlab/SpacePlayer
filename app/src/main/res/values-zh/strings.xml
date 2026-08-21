@@ -26,6 +26,7 @@
     <string name="library_permission_saf_hint">如果点"去授权"没有任何反应，说明权限已被永久拒绝，只能到系统设置里开启。也可以不授权，用左下角的"其它 · 选择文件"逐个打开视频。</string>
     <string name="library_filter_all">全部</string>
     <string name="library_start_playback">开始播放</string>
+    <string name="library_file_missing">文件位置已被移除，请重新确认</string>
 
     <string name="format_popup_title">修正格式</string>
     <string name="subtitle_status_set">字幕：已设置</string>

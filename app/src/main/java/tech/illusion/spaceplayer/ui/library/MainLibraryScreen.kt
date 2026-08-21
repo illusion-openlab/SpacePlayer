@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +65,7 @@ import com.pico.spatial.ui.design.SideNavigation
 import com.pico.spatial.ui.design.SideNavigationItem
 import com.pico.spatial.ui.design.SideNavigationItemDefaults
 import com.pico.spatial.ui.design.Text
+import com.pico.spatial.ui.design.windows.AlertDialog
 import com.pico.spatial.ui.foundation.haptic.controllerHapticFeedback
 import com.pico.spatial.ui.foundation.hover.spatialHoverEffect
 import com.pico.spatial.ui.graphics.SpatialHoverStyle
@@ -139,6 +141,11 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
     val playbackViewModel: PlaybackViewModel = playbackScope.get()
     val historyStore: PlaybackHistoryStore = GlobalContext.get().get()
     var selectedEnvironment by remember { mutableStateOf(Environment.CINEMA) }
+    // Surfaced by the "开始播放" click handler below when the tapped item's backing file has gone
+    // missing (deleted/moved, or a SAF/MediaStore grant revoked) - checked up front there instead of
+    // letting PlaybackManager.setup() discover it, so the user gets an immediate in-window dialog
+    // rather than a silent no-op tap (see PlaybackManager.kt's setup() catch for the deeper fix).
+    var showFileMissingDialog by rememberSaveable { mutableStateOf(false) }
 
     // Resolved here (composable scope) rather than inline in the launcher callback below, since
     // that callback runs outside of composition when the activity result arrives and can't call
@@ -581,6 +588,14 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                                 onPickSubtitle = { subtitleLauncher.launch(arrayOf("*/*")) },
                                 onStartPlayback = {
                                     val item = libraryViewModel.selectedItem ?: return@LibraryBottomBar
+                                    // DocumentFile.fromSingleUri(...).exists() is the same check already
+                                    // used above for naming an imported/subtitle uri - it round-trips
+                                    // through ContentResolver.query() rather than actually opening the
+                                    // file, so it's cheap enough for a click handler on the main thread.
+                                    if (DocumentFile.fromSingleUri(context, item.uri)?.exists() != true) {
+                                        showFileMissingDialog = true
+                                        return@LibraryBottomBar
+                                    }
                                     val itemToPlay = if (item.projection == Projection.FLAT) {
                                         item.copy(preferredEnvironment = item.preferredEnvironment ?: selectedEnvironment)
                                     } else {
@@ -594,6 +609,24 @@ fun MainLibraryScreen(modifier: Modifier = Modifier) {
                     }
                 }
             }
+        }
+
+        if (showFileMissingDialog) {
+            AlertDialog(
+                onDismissRequest = { showFileMissingDialog = false },
+                content = {
+                    Text(
+                        text = stringResource(R.string.library_file_missing),
+                        color = PicoTheme.colorScheme.labelSecondary,
+                        style = PicoTheme.typography.bodyLarge,
+                    )
+                },
+                buttons = {
+                    Button(onClick = { showFileMissingDialog = false }) {
+                        Text(text = stringResource(R.string.action_confirm))
+                    }
+                },
+            )
         }
     }
 }
